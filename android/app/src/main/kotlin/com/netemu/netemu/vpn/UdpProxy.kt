@@ -2,6 +2,7 @@ package com.netemu.netemu.vpn
 
 import android.net.VpnService
 import android.util.Log
+import com.netemu.netemu.emulator.EmulatorConfig
 import com.netemu.netemu.emulator.EmulatorStats
 import java.io.FileOutputStream
 import java.net.DatagramPacket
@@ -41,6 +42,7 @@ class UdpProxy(
 
     fun handlePacket(packet: ByteArray) {
         if (!PacketUtil.isIpv4(packet)) return
+        if (!EmulatorConfig.shouldProcessProtocol(17)) return  // UDP=17
         val ihl = PacketUtil.ihl(packet)
         if (packet.size < ihl + 8) return
         val src = PacketUtil.srcAddr(packet)
@@ -58,7 +60,7 @@ class UdpProxy(
         val key = Key(src, sport, dst, dport)
         val session = sessions[key] ?: createSession(key, src, sport, dst, dport) ?: return
 
-        val sendAction = {
+        val sendAction: () -> Unit = {
             try {
                 if (delay > 0) Thread.sleep(delay)
                 val dp = DatagramPacket(payload, payload.size, dst, dport)
@@ -68,6 +70,7 @@ class UdpProxy(
                 Log.w(TAG, "UDP send: ${e.message}")
                 closeSession(key)
             }
+            Unit
         }
         if (delay > 0) pool.execute(sendAction) else sendAction()
     }
@@ -108,7 +111,7 @@ class UdpProxy(
                 val delay = EmulatorStats.download.computeDelayMs()
                 EmulatorStats.download.recordPass(data.size)
 
-                val inject = {
+                val inject: () -> Unit = {
                     try {
                         if (delay > 0) Thread.sleep(delay)
                         val pkt = PacketUtil.buildUdpPacket(
@@ -124,6 +127,7 @@ class UdpProxy(
                     } catch (e: Exception) {
                         Log.w(TAG, "UDP inject: ${e.message}")
                     }
+                    Unit
                 }
                 if (delay > 0) pool.execute(inject) else inject()
             } catch (_: java.net.SocketTimeoutException) {

@@ -1,19 +1,34 @@
 import 'dart:convert';
 
+/// Continuous loss mode: by packet count or by time duration.
+enum ContinuousMode {
+  packet, // pass N packets / drop M packets
+  time,   // pass N ms / drop M ms
+}
+
+/// Protocol filter for simulation.
+enum ProtocolFilter {
+  all,
+  tcp,
+  udp,
+}
+
 /// Direction-specific network simulation parameters.
 class DirectionConfig {
   final int delayMs; // 0-3000
   final int jitterMs; // 0-1000
   final int bandwidthKbps; // 0 = unlimited
   final double lossPercent; // 0-100
-  final int continuousPass; // 0-100
-  final int continuousDrop; // 0-100
+  final ContinuousMode continuousMode;
+  final int continuousPass; // packets (packet mode) or ms (time mode)
+  final int continuousDrop; // packets (packet mode) or ms (time mode)
 
   const DirectionConfig({
     this.delayMs = 0,
     this.jitterMs = 0,
     this.bandwidthKbps = 0,
     this.lossPercent = 0.0,
+    this.continuousMode = ContinuousMode.packet,
     this.continuousPass = 0,
     this.continuousDrop = 0,
   });
@@ -23,6 +38,7 @@ class DirectionConfig {
     int? jitterMs,
     int? bandwidthKbps,
     double? lossPercent,
+    ContinuousMode? continuousMode,
     int? continuousPass,
     int? continuousDrop,
   }) {
@@ -31,6 +47,7 @@ class DirectionConfig {
       jitterMs: jitterMs ?? this.jitterMs,
       bandwidthKbps: bandwidthKbps ?? this.bandwidthKbps,
       lossPercent: lossPercent ?? this.lossPercent,
+      continuousMode: continuousMode ?? this.continuousMode,
       continuousPass: continuousPass ?? this.continuousPass,
       continuousDrop: continuousDrop ?? this.continuousDrop,
     );
@@ -41,18 +58,26 @@ class DirectionConfig {
         'jitterMs': jitterMs,
         'bandwidthKbps': bandwidthKbps,
         'lossPercent': lossPercent,
+        'continuousMode': continuousMode.name,
         'continuousPass': continuousPass,
         'continuousDrop': continuousDrop,
       };
 
   factory DirectionConfig.fromJson(Map<String, dynamic> json) {
+    final modeStr = json['continuousMode'] as String? ?? 'packet';
+    final mode = ContinuousMode.values.firstWhere(
+      (e) => e.name == modeStr,
+      orElse: () => ContinuousMode.packet,
+    );
     return DirectionConfig(
       delayMs: (json['delayMs'] as int? ?? 0).clamp(0, 3000),
       jitterMs: (json['jitterMs'] as int? ?? 0).clamp(0, 1000),
       bandwidthKbps: json['bandwidthKbps'] as int? ?? 0,
-      lossPercent: ((json['lossPercent'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 100.0),
-      continuousPass: (json['continuousPass'] as int? ?? 0).clamp(0, 100),
-      continuousDrop: (json['continuousDrop'] as int? ?? 0).clamp(0, 100),
+      lossPercent:
+          ((json['lossPercent'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 100.0),
+      continuousMode: mode,
+      continuousPass: (json['continuousPass'] as int? ?? 0).clamp(0, 10000),
+      continuousDrop: (json['continuousDrop'] as int? ?? 0).clamp(0, 10000),
     );
   }
 
@@ -64,12 +89,16 @@ class DirectionConfig {
       (continuousPass > 0 && continuousDrop > 0);
 }
 
+/// Full simulation profile.
 class NetworkConfig {
   final String name;
   final String backend; // auto | vpn | shizuku | adb | root
   final DirectionConfig upload;
   final DirectionConfig download;
   final String? interfaceName;
+  final ProtocolFilter protocol;
+  final bool showControlFloat;
+  final bool showInfoFloat;
 
   const NetworkConfig({
     this.name = 'Default',
@@ -77,6 +106,9 @@ class NetworkConfig {
     this.upload = const DirectionConfig(),
     this.download = const DirectionConfig(),
     this.interfaceName,
+    this.protocol = ProtocolFilter.all,
+    this.showControlFloat = false,
+    this.showInfoFloat = false,
   });
 
   NetworkConfig copyWith({
@@ -85,6 +117,9 @@ class NetworkConfig {
     DirectionConfig? upload,
     DirectionConfig? download,
     String? interfaceName,
+    ProtocolFilter? protocol,
+    bool? showControlFloat,
+    bool? showInfoFloat,
   }) {
     return NetworkConfig(
       name: name ?? this.name,
@@ -92,6 +127,9 @@ class NetworkConfig {
       upload: upload ?? this.upload,
       download: download ?? this.download,
       interfaceName: interfaceName ?? this.interfaceName,
+      protocol: protocol ?? this.protocol,
+      showControlFloat: showControlFloat ?? this.showControlFloat,
+      showInfoFloat: showInfoFloat ?? this.showInfoFloat,
     );
   }
 
@@ -101,9 +139,17 @@ class NetworkConfig {
         'upload': upload.toJson(),
         'download': download.toJson(),
         'interfaceName': interfaceName,
+        'protocol': protocol.name,
+        'showControlFloat': showControlFloat,
+        'showInfoFloat': showInfoFloat,
       };
 
   factory NetworkConfig.fromJson(Map<String, dynamic> json) {
+    final protoStr = json['protocol'] as String? ?? 'all';
+    final protocol = ProtocolFilter.values.firstWhere(
+      (e) => e.name == protoStr,
+      orElse: () => ProtocolFilter.all,
+    );
     return NetworkConfig(
       name: json['name'] as String? ?? 'Default',
       backend: json['backend'] as String? ?? 'auto',
@@ -112,6 +158,9 @@ class NetworkConfig {
       download: DirectionConfig.fromJson(
           Map<String, dynamic>.from(json['download'] as Map? ?? {})),
       interfaceName: json['interfaceName'] as String?,
+      protocol: protocol,
+      showControlFloat: json['showControlFloat'] as bool? ?? false,
+      showInfoFloat: json['showInfoFloat'] as bool? ?? false,
     );
   }
 

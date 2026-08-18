@@ -2,8 +2,10 @@ package com.netemu.netemu
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.net.VpnService
-import android.os.Bundle
+import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -12,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel
 import com.netemu.netemu.backend.ShellBackend
 import com.netemu.netemu.emulator.EmulatorConfig
 import com.netemu.netemu.emulator.EmulatorStats
+import com.netemu.netemu.float.FloatWindowService
 import com.netemu.netemu.vpn.NetEmuVpnService
 import java.util.concurrent.Executors
 
@@ -50,25 +53,43 @@ class MainActivity : FlutterActivity() {
                     "updateConfig" -> {
                         val args = call.arguments as? Map<*, *>
                         applyConfig(args)
-                        // Hot-apply to active backend without restart
                         if (simulationRunning) {
                             hotApply(args)
                         }
                         result.success(true)
                     }
                     "getStatistics" -> result.success(
-                        EmulatorStats.toMap(currentBackend, currentIface ?: "", NetEmuVpnService.instance != null)
+                        EmulatorStats.toMap(
+                            currentBackend,
+                            currentIface ?: ShellBackend.detectDefaultIface(),
+                            NetEmuVpnService.instance != null,
+                        )
                     )
                     "executeCommand" -> {
                         val cmd = (call.arguments as? Map<*, *>)?.get("command") as? String ?: ""
                         val r = ShellBackend.exec(cmd, useRoot = ShellBackend.isRootAvailable())
-                        result.success(mapOf("exitCode" to r.exitCode, "stdout" to r.stdout, "stderr" to r.stderr))
+                        result.success(
+                            mapOf(
+                                "exitCode" to r.exitCode,
+                                "stdout" to r.stdout,
+                                "stderr" to r.stderr,
+                            )
+                        )
                     }
                     "requestVpnPermission" -> requestVpnPermission(result)
                     "getShizukuStatus" -> result.success(getShizukuStatus())
                     "isRootAvailable" -> result.success(ShellBackend.isRootAvailable())
                     "exportAdbCommands" -> {
                         result.success(ShellBackend.exportAdbCommands(currentIface))
+                    }
+                    "requestOverlayPermission" -> requestOverlayPermission(result)
+                    "showControlFloat" -> {
+                        val show = (call.arguments as? Map<*, *>)?.get("show") as? Boolean ?: false
+                        showFloat(control = show, info = null, result)
+                    }
+                    "showInfoFloat" -> {
+                        val show = (call.arguments as? Map<*, *>)?.get("show") as? Boolean ?: false
+                        showFloat(control = null, info = show, result)
                     }
                     else -> result.notImplemented()
                 }
@@ -80,6 +101,7 @@ class MainActivity : FlutterActivity() {
                     eventSink = events
                     startStatsEmitter()
                 }
+
                 override fun onCancel(arguments: Any?) {
                     eventSink = null
                 }
@@ -92,7 +114,7 @@ class MainActivity : FlutterActivity() {
         return mapOf(
             "root" to root,
             "shizuku" to shizuku,
-            "adb" to false, // in-app adb not available; use exportAdbCommands
+            "adb" to false,
             "vpn" to true,
         )
     }
@@ -101,20 +123,32 @@ class MainActivity : FlutterActivity() {
         return try {
             val pm = packageManager
             val installed = try {
-                pm.getPackageInfo("moe.shizuku.privileged.api", 0); true
+                pm.getPackageInfo("moe.shizuku.privileged.api", 0)
+                true
             } catch (_: Exception) {
-                try { pm.getPackageInfo("rikka.shizuku", 0); true } catch (_: Exception) { false }
+                try {
+                    pm.getPackageInfo("rikka.shizuku", 0)
+                    true
+                } catch (_: Exception) {
+                    false
+                }
             }
             mapOf(
                 "installed" to installed,
                 "running" to installed,
                 "authorized" to false,
                 "message" to if (installed)
-                    "Shizuku installed — open Shizuku app to authorize (API binding requires Shizuku lib)"
-                else "Shizuku not installed",
+                    "Shizuku installed — open Shizuku app to authorize (full API needs Shizuku library)"
+                else
+                    "Shizuku not installed",
             )
         } catch (e: Exception) {
-            mapOf("installed" to false, "running" to false, "authorized" to false, "message" to (e.message ?: ""))
+            mapOf(
+                "installed" to false,
+                "running" to false,
+                "authorized" to false,
+                "message" to (e.message ?: ""),
+            )
         }
     }
 
@@ -131,7 +165,6 @@ class MainActivity : FlutterActivity() {
         if (ShellBackend.isRootAvailable()) return "root"
         val sh = getShizukuStatus()
         if (sh["authorized"] == true) return "shizuku"
-        // adb is export-only
         return "vpn"
     }
 
@@ -147,13 +180,17 @@ class MainActivity : FlutterActivity() {
                 simulationRunning = r.exitCode == 0
                 sendLog("Root/tc started: exit=${r.exitCode} ${r.stderr}")
                 result.success(simulationRunning)
+                maybeShowFloats(args)
             }
             "shizuku" -> {
-                // Without Shizuku API binding, fall back to non-root shell (usually fails for tc)
                 val r = ShellBackend.applyTc(currentIface, useRoot = false)
                 simulationRunning = r.exitCode == 0
-                sendLog("Shizuku/shell tc: exit=${r.exitCode}. ${if (!simulationRunning) "Authorize Shizuku or use Root/VPN." else "ok"}")
+                sendLog(
+                    "Shizuku/shell tc: exit=${r.exitCode}. " +
+                        if (!simulationRunning) "Authorize Shizuku or use Root/VPN." else "ok"
+                )
                 result.success(simulationRunning)
+                if (simulationRunning) maybeShowFloats(args)
             }
             "adb" -> {
                 val cmds = ShellBackend.exportAdbCommands(currentIface)
@@ -162,7 +199,6 @@ class MainActivity : FlutterActivity() {
                 result.success(false)
             }
             else -> {
-                // VPN
                 val intent = VpnService.prepare(this)
                 if (intent != null) {
                     pendingStartResult = result
@@ -171,8 +207,24 @@ class MainActivity : FlutterActivity() {
                     startVpnService()
                     simulationRunning = true
                     result.success(true)
+                    maybeShowFloats(args)
                 }
             }
+        }
+    }
+
+    private fun maybeShowFloats(args: Map<*, *>?) {
+        val showControl = args?.get("showControlFloat") as? Boolean ?: false
+        val showInfo = args?.get("showInfoFloat") as? Boolean ?: false
+        if (showControl && FloatWindowService.hasOverlayPermission(this)) {
+            startService(Intent(this, FloatWindowService::class.java).apply {
+                action = FloatWindowService.ACTION_SHOW_CONTROL
+            })
+        }
+        if (showInfo && FloatWindowService.hasOverlayPermission(this)) {
+            startService(Intent(this, FloatWindowService::class.java).apply {
+                action = FloatWindowService.ACTION_SHOW_INFO
+            })
         }
     }
 
@@ -180,23 +232,15 @@ class MainActivity : FlutterActivity() {
         when (currentBackend) {
             "root" -> ShellBackend.applyTc(currentIface, useRoot = true)
             "shizuku" -> ShellBackend.applyTc(currentIface, useRoot = false)
-            "vpn" -> {
-                // EmulatorConfig already updated; VPN proxies read it live
-                val i = Intent(this, NetEmuVpnService::class.java).apply {
-                    action = NetEmuVpnService.ACTION_UPDATE
-                }
-                startService(i)
-            }
-            "adb" -> sendLog("ADB commands updated:\n" + ShellBackend.exportAdbCommands(currentIface).joinToString("\n"))
+            // VPN path reads EmulatorConfig live, no restart needed
         }
-        sendLog("Config hot-applied (backend=$currentBackend)")
     }
 
     private fun startVpnService() {
         val intent = Intent(this, NetEmuVpnService::class.java).apply {
             action = NetEmuVpnService.ACTION_START
         }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
             startService(intent)
@@ -216,6 +260,12 @@ class MainActivity : FlutterActivity() {
                 startService(intent)
             }
         }
+        // Hide floats on stop
+        try {
+            startService(Intent(this, FloatWindowService::class.java).apply {
+                action = FloatWindowService.ACTION_HIDE
+            })
+        } catch (_: Exception) {}
         simulationRunning = false
         sendLog("Simulation stopped")
     }
@@ -228,6 +278,51 @@ class MainActivity : FlutterActivity() {
         } else {
             result.success(true)
         }
+    }
+
+    private fun requestOverlayPermission(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Settings.canDrawOverlays(this)) {
+                result.success(true)
+            } else {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                )
+                startActivity(intent)
+                result.success(false)
+            }
+        } else {
+            result.success(true)
+        }
+    }
+
+    private fun showFloat(control: Boolean?, info: Boolean?, result: MethodChannel.Result) {
+        if (!FloatWindowService.hasOverlayPermission(this)) {
+            result.success(false)
+            return
+        }
+        if (control == true) {
+            startService(Intent(this, FloatWindowService::class.java).apply {
+                action = FloatWindowService.ACTION_SHOW_CONTROL
+            })
+        } else if (control == false) {
+            startService(Intent(this, FloatWindowService::class.java).apply {
+                action = FloatWindowService.ACTION_HIDE
+            })
+        }
+        if (info == true) {
+            startService(Intent(this, FloatWindowService::class.java).apply {
+                action = FloatWindowService.ACTION_SHOW_INFO
+            })
+        } else if (info == false && control == null) {
+            // only hide info: service currently hides all on ACTION_HIDE;
+            // for simplicity re-show control if needed by caller
+            startService(Intent(this, FloatWindowService::class.java).apply {
+                action = FloatWindowService.ACTION_HIDE
+            })
+        }
+        result.success(true)
     }
 
     @Suppress("DEPRECATION")

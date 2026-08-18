@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.netemu.netemu"
-    compileSdk = 34
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -21,7 +21,7 @@ android {
     defaultConfig {
         applicationId = "com.netemu.netemu"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
         // arm64-v8a only — do NOT combine with flutter --split-per-abi filters conflict

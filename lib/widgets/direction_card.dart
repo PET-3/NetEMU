@@ -21,6 +21,8 @@ class DirectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isTimeMode = config.continuousMode == ContinuousMode.time;
+
     return Card(
       elevation: 0,
       color: theme.colorScheme.surfaceContainerHighest,
@@ -29,7 +31,9 @@ class DirectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text(title,
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             _slider(
               context,
@@ -84,44 +88,55 @@ class DirectionCard extends StatelessWidget {
               onChanged: (v) => onChanged(config.copyWith(lossPercent: v)),
             ),
             const SizedBox(height: 8),
-            Text('连续丢包 (放行/丢包)', style: theme.textTheme.bodySmall),
+            // Continuous loss mode selector
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: '${config.continuousPass}',
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '放行 0-100',
-                      isDense: true,
-                      border: OutlineInputBorder(),
+                const Text('连续丢包模式'),
+                SegmentedButton<ContinuousMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: ContinuousMode.packet,
+                      label: Text('包数'),
                     ),
-                    onChanged: (s) {
-                      final v = (int.tryParse(s) ?? 0).clamp(0, 100);
-                      onChanged(config.copyWith(continuousPass: v));
-                    },
-                  ),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: Text('/'),
-                ),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: '${config.continuousDrop}',
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '丢包 0-100',
-                      isDense: true,
-                      border: OutlineInputBorder(),
+                    ButtonSegment(
+                      value: ContinuousMode.time,
+                      label: Text('时间'),
                     ),
-                    onChanged: (s) {
-                      final v = (int.tryParse(s) ?? 0).clamp(0, 100);
-                      onChanged(config.copyWith(continuousDrop: v));
-                    },
-                  ),
+                  ],
+                  selected: {config.continuousMode},
+                  onSelectionChanged: (s) {
+                    onChanged(config.copyWith(continuousMode: s.first));
+                  },
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            _slider(
+              context,
+              label: isTimeMode ? '放行时间' : '放行包数',
+              value: config.continuousPass.toDouble(),
+              min: 0,
+              max: isTimeMode ? 10000 : 100,
+              divisions: isTimeMode ? 100 : 50,
+              display: isTimeMode
+                  ? '${config.continuousPass} ms'
+                  : '${config.continuousPass} 包',
+              onChanged: (v) =>
+                  onChanged(config.copyWith(continuousPass: v.round())),
+            ),
+            _slider(
+              context,
+              label: isTimeMode ? '丢包时间' : '丢包包数',
+              value: config.continuousDrop.toDouble(),
+              min: 0,
+              max: isTimeMode ? 10000 : 100,
+              divisions: isTimeMode ? 100 : 50,
+              display: isTimeMode
+                  ? '${config.continuousDrop} ms'
+                  : '${config.continuousDrop} 包',
+              onChanged: (v) =>
+                  onChanged(config.copyWith(continuousDrop: v.round())),
             ),
           ],
         ),
@@ -146,9 +161,7 @@ class DirectionCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(label),
-            Text(display, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                )),
+            Text(display, style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
         Slider(

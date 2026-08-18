@@ -5,15 +5,31 @@ import kotlin.random.Random
 
 /**
  * Independent network condition simulator used by ALL backends.
- * Applies: random loss, continuous (burst) loss, latency+jitter, token-bucket bandwidth.
+ * Supports:
+ * - Random loss
+ * - Continuous (burst) loss: packet-count mode OR time-duration mode
+ * - Latency + jitter
+ * - Token-bucket bandwidth
  */
 class NetworkEmulator(private val direction: DirectionParams) {
 
+    // Packet-count continuous state
     private var contState = 0 // 0=pass phase, 1=drop phase
     private var contCounter = 0
 
+    // Time-based continuous state
+    private var timePhaseStartMs = 0L
+    private var timeInDropPhase = false
+
     private var tokens = 0.0
     private var lastRefillNs = System.nanoTime()
+
+    // For speed calculation
+    private var lastBytes = 0L
+    private var lastSpeedTs = System.currentTimeMillis()
+    @Volatile
+    var currentSpeedBps = 0.0
+        private set
 
     val bytesPassed = AtomicLong(0)
     val packetsPassed = AtomicLong(0)
@@ -25,21 +41,10 @@ class NetworkEmulator(private val direction: DirectionParams) {
         val passN = direction.continuousPass
         val dropN = direction.continuousDrop
         if (passN > 0 && dropN > 0) {
-            if (contState == 0) {
-                contCounter++
-                if (contCounter >= passN) {
-                    contState = 1
-                    contCounter = 0
-                }
-                return false
+            return if (direction.continuousMode == "time") {
+                shouldDropTimeMode(passN, dropN)
             } else {
-                contCounter++
-                if (contCounter >= dropN) {
-                    contState = 0
-                    contCounter = 0
-                }
-                continuousLoss.incrementAndGet()
-                return true
+                shouldDropPacketMode(passN, dropN)
             }
         }
         val loss = direction.lossPercent
@@ -48,6 +53,48 @@ class NetworkEmulator(private val direction: DirectionParams) {
             return true
         }
         return false
+    }
+
+    private fun shouldDropPacketMode(passN: Int, dropN: Int): Boolean {
+        if (contState == 0) {
+            contCounter++
+            if (contCounter >= passN) {
+                contState = 1
+                contCounter = 0
+            }
+            return false
+        } else {
+            contCounter++
+            if (contCounter >= dropN) {
+                contState = 0
+                contCounter = 0
+            }
+            continuousLoss.incrementAndGet()
+            return true
+        }
+    }
+
+    private fun shouldDropTimeMode(passMs: Int, dropMs: Int): Boolean {
+        val now = System.currentTimeMillis()
+        if (timePhaseStartMs == 0L) {
+            timePhaseStartMs = now
+            timeInDropPhase = false
+        }
+        val elapsed = now - timePhaseStartMs
+        if (!timeInDropPhase) {
+            if (elapsed >= passMs) {
+                timeInDropPhase = true
+                timePhaseStartMs = now
+            }
+            return false
+        } else {
+            if (elapsed >= dropMs) {
+                timeInDropPhase = false
+                timePhaseStartMs = now
+            }
+            continuousLoss.incrementAndGet()
+            return true
+        }
     }
 
     /** Delay in milliseconds to apply (0 = no extra delay). */
@@ -70,7 +117,7 @@ class NetworkEmulator(private val direction: DirectionParams) {
         val now = System.nanoTime()
         val rateBps = kbps * 1000.0 / 8.0
         val elapsed = (now - lastRefillNs) / 1_000_000_000.0
-        tokens = (tokens + rateBps * elapsed).coerceAtMost(rateBps)
+        tokens = (tokens + rateBps * elapsed).coerceAtMost(rateBps * 2) // allow small burst
         lastRefillNs = now
         if (tokens >= size) {
             tokens -= size
@@ -82,6 +129,18 @@ class NetworkEmulator(private val direction: DirectionParams) {
     fun recordPass(size: Int) {
         bytesPassed.addAndGet(size.toLong())
         packetsPassed.incrementAndGet()
+        updateSpeed()
+    }
+
+    private fun updateSpeed() {
+        val now = System.currentTimeMillis()
+        val dt = now - lastSpeedTs
+        if (dt >= 1000) {
+            val cur = bytesPassed.get()
+            currentSpeedBps = (cur - lastBytes) * 1000.0 / dt
+            lastBytes = cur
+            lastSpeedTs = now
+        }
     }
 
     fun resetStats() {
@@ -91,7 +150,12 @@ class NetworkEmulator(private val direction: DirectionParams) {
         continuousLoss.set(0)
         contState = 0
         contCounter = 0
+        timePhaseStartMs = 0L
+        timeInDropPhase = false
         tokens = 0.0
         lastRefillNs = System.nanoTime()
+        lastBytes = 0
+        lastSpeedTs = System.currentTimeMillis()
+        currentSpeedBps = 0.0
     }
 }

@@ -19,7 +19,10 @@ class StatTile extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: theme.textTheme.bodySmall),
-        Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        Text(
+          value,
+          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
         if (sub != null)
           Text(sub!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
       ],

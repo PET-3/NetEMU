@@ -2,6 +2,7 @@ package com.netemu.netemu.vpn
 
 import android.net.VpnService
 import android.util.Log
+import com.netemu.netemu.emulator.EmulatorConfig
 import com.netemu.netemu.emulator.EmulatorStats
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -48,10 +49,12 @@ class TcpProxy(
         var clientNextSeq: AtomicInteger, // what we expect from client
         var serverSeq: AtomicInteger,     // what we send to client as seq
         @Volatile var closed: Boolean = false,
+        @Volatile var lastActiveMs: Long = System.currentTimeMillis(),
     )
 
     fun handlePacket(packet: ByteArray) {
         if (!PacketUtil.isIpv4(packet)) return
+        if (!EmulatorConfig.shouldProcessProtocol(6)) return  // TCP=6
         val ihl = PacketUtil.ihl(packet)
         if (packet.size < ihl + 20) return
         val src = PacketUtil.srcAddr(packet)
@@ -72,7 +75,7 @@ class TcpProxy(
         }
 
         val delay = EmulatorStats.upload.computeDelayMs()
-        val action = {
+        val action: () -> Unit = {
             try {
                 if (delay > 0 && ((flags and FLAG_SYN) != 0 || payload.isNotEmpty())) {
                     Thread.sleep(delay)
@@ -81,6 +84,7 @@ class TcpProxy(
             } catch (e: Exception) {
                 Log.w(TAG, "TCP process: ${e.message}")
             }
+            Unit
         }
         if (delay > 0) pool.execute(action) else action()
     }
@@ -183,7 +187,7 @@ class TcpProxy(
                 val delay = EmulatorStats.download.computeDelayMs()
                 EmulatorStats.download.recordPass(data.size)
 
-                val inject = {
+                val inject: () -> Unit = {
                     try {
                         if (delay > 0) Thread.sleep(delay)
                         val seq = session.serverSeq.getAndAdd(data.size)
@@ -197,6 +201,7 @@ class TcpProxy(
                     } catch (e: Exception) {
                         Log.w(TAG, "TCP inject: ${e.message}")
                     }
+                    Unit
                 }
                 if (delay > 0) pool.execute(inject) else inject()
             }

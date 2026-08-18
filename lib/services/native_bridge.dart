@@ -160,4 +160,47 @@ class NativeBridge {
       return false;
     }
   }
+
+  Future<List<String>> exportAdbCommands() async {
+    try {
+      final result = await _method.invokeMethod<List>('exportAdbCommands');
+      return (result ?? []).cast<String>();
+    } on PlatformException {
+      return [];
+    }
+  }
+
+  Future<bool> requestOverlayPermission() async {
+    try {
+      final result =
+          await _method.invokeMethod<bool>('requestOverlayPermission');
+      return result ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<bool> showControlFloat(bool show) async {
+    try {
+      final result = await _method.invokeMethod<bool>(
+        'showControlFloat',
+        {'show': show},
+      );
+      return result ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<bool> showInfoFloat(bool show) async {
+    try {
+      final result = await _method.invokeMethod<bool>(
+        'showInfoFloat',
+        {'show': show},
+      );
+      return result ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
 }

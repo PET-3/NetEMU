@@ -13,8 +13,8 @@ object EmulatorStats {
         return mapOf(
             "uploadBytes" to upload.bytesPassed.get(),
             "downloadBytes" to download.bytesPassed.get(),
-            "uploadSpeedBps" to 0.0,
-            "downloadSpeedBps" to 0.0,
+            "uploadSpeedBps" to upload.currentSpeedBps,
+            "downloadSpeedBps" to download.currentSpeedBps,
             "uploadPackets" to upload.packetsPassed.get(),
             "downloadPackets" to download.packetsPassed.get(),
             "randomLossCount" to (upload.randomLoss.get() + download.randomLoss.get()),
@@ -22,6 +22,7 @@ object EmulatorStats {
             "backend" to backend,
             "interfaceName" to iface,
             "vpnActive" to vpnActive,
+            "protocolFilter" to EmulatorConfig.protocolFilter,
         )
     }
 }

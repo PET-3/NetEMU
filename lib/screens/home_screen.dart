@@ -4,6 +4,7 @@ import '../models/backend_status.dart';
 import '../models/network_config.dart';
 import '../services/network_controller.dart';
 import '../widgets/direction_card.dart';
+import '../widgets/protocol_and_float_section.dart';
 import '../widgets/stat_tile.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -90,7 +91,8 @@ class HomeScreen extends StatelessWidget {
                                   if (!ok) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                          content: Text('启动失败，请检查权限或日志')),
+                                        content: Text('启动失败，请检查权限或日志'),
+                                      ),
                                     );
                                   }
                                 },
@@ -102,7 +104,9 @@ class HomeScreen extends StatelessWidget {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: ctrl.running
-                              ? () => ctrl.stop()
+                              ? () async {
+                                  await ctrl.stop();
+                                }
                               : null,
                           icon: const Icon(Icons.stop),
                           label: const Text('停止'),
@@ -115,58 +119,28 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Text('预设', style: theme.textTheme.titleSmall),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final p in [
-                ('正常', 20, 0, 0, 0.0),
-                ('4G', 50, 10, 5120, 1.0),
-                ('3G', 150, 50, 384, 3.0),
-                ('高延迟', 500, 100, 0, 5.0),
-                ('极差', 1000, 300, 128, 10.0),
-              ])
-                ActionChip(
-                  label: Text(p.$1),
-                  onPressed: () {
-                    final d = DirectionConfig(
-                      delayMs: p.$2,
-                      jitterMs: p.$3,
-                      bandwidthKbps: p.$4,
-                      lossPercent: p.$5,
-                    );
-                    ctrl.updateConfig(ctrl.config.copyWith(upload: d, download: d));
-                  },
-                ),
-            ],
-          ),
-          const SizedBox(height: 16),
 
-          // Upload
+          // Protocol filter + floating windows
+          const ProtocolAndFloatSection(),
+          const SizedBox(height: 12),
+
+          // Upload / Download params
           DirectionCard(
-            title: '上行 Upload',
+            title: '上行 (Upload)',
             config: ctrl.config.upload,
-            onChanged: (d) {
-              ctrl.updateConfig(ctrl.config.copyWith(upload: d));
-            },
+            onChanged: (c) =>
+                ctrl.updateConfig(ctrl.config.copyWith(upload: c)),
+          ),
+          const SizedBox(height: 12),
+          DirectionCard(
+            title: '下行 (Download)',
+            config: ctrl.config.download,
+            onChanged: (c) =>
+                ctrl.updateConfig(ctrl.config.copyWith(download: c)),
           ),
           const SizedBox(height: 12),
 
-          // Download
-          DirectionCard(
-            title: '下行 Download',
-            config: ctrl.config.download,
-            onChanged: (d) {
-              ctrl.updateConfig(ctrl.config.copyWith(download: d));
-            },
-          ),
-          const SizedBox(height: 16),
-
           // Live stats
-          Text('实时统计', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
           Card(
             elevation: 0,
             color: theme.colorScheme.surfaceContainerHighest,
@@ -180,14 +154,16 @@ class HomeScreen extends StatelessWidget {
                         child: StatTile(
                           label: '上传',
                           value: _fmtBytes(ctrl.stats.uploadBytes),
-                          sub: '${_fmtSpeed(ctrl.stats.uploadSpeedBps)} · ${ctrl.stats.uploadPackets} pkts',
+                          sub:
+                              '${_fmtSpeed(ctrl.stats.uploadSpeedBps)} · ${ctrl.stats.uploadPackets} pkts',
                         ),
                       ),
                       Expanded(
                         child: StatTile(
                           label: '下载',
                           value: _fmtBytes(ctrl.stats.downloadBytes),
-                          sub: '${_fmtSpeed(ctrl.stats.downloadSpeedBps)} · ${ctrl.stats.downloadPackets} pkts',
+                          sub:
+                              '${_fmtSpeed(ctrl.stats.downloadSpeedBps)} · ${ctrl.stats.downloadPackets} pkts',
                         ),
                       ),
                     ],
@@ -213,7 +189,8 @@ class HomeScreen extends StatelessWidget {
                   Text(
                     '后端: ${ctrl.stats.backend.isEmpty ? ctrl.activeBackend.label : ctrl.stats.backend}'
                     '  ·  接口: ${ctrl.stats.interfaceName.isEmpty ? "-" : ctrl.stats.interfaceName}'
-                    '  ·  VPN: ${ctrl.stats.vpnActive ? "是" : "否"}',
+                    '  ·  VPN: ${ctrl.stats.vpnActive ? "是" : "否"}'
+                    '  ·  协议: ${ctrl.stats.protocolFilter}',
                     style: theme.textTheme.bodySmall,
                   ),
                 ],

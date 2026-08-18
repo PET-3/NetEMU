@@ -106,6 +106,7 @@ class SimulationStatistics {
   final String backend;
   final String interfaceName;
   final bool vpnActive;
+  final String protocolFilter;
 
   const SimulationStatistics({
     this.uploadBytes = 0,
@@ -119,21 +120,23 @@ class SimulationStatistics {
     this.backend = '',
     this.interfaceName = '',
     this.vpnActive = false,
+    this.protocolFilter = 'all',
   });
 
   factory SimulationStatistics.fromJson(Map<String, dynamic> json) {
     return SimulationStatistics(
-      uploadBytes: json['uploadBytes'] as int? ?? 0,
-      downloadBytes: json['downloadBytes'] as int? ?? 0,
+      uploadBytes: (json['uploadBytes'] as num?)?.toInt() ?? 0,
+      downloadBytes: (json['downloadBytes'] as num?)?.toInt() ?? 0,
       uploadSpeedBps: (json['uploadSpeedBps'] as num?)?.toDouble() ?? 0,
       downloadSpeedBps: (json['downloadSpeedBps'] as num?)?.toDouble() ?? 0,
-      uploadPackets: json['uploadPackets'] as int? ?? 0,
-      downloadPackets: json['downloadPackets'] as int? ?? 0,
-      randomLossCount: json['randomLossCount'] as int? ?? 0,
-      continuousLossCount: json['continuousLossCount'] as int? ?? 0,
+      uploadPackets: (json['uploadPackets'] as num?)?.toInt() ?? 0,
+      downloadPackets: (json['downloadPackets'] as num?)?.toInt() ?? 0,
+      randomLossCount: (json['randomLossCount'] as num?)?.toInt() ?? 0,
+      continuousLossCount: (json['continuousLossCount'] as num?)?.toInt() ?? 0,
       backend: json['backend'] as String? ?? '',
       interfaceName: json['interfaceName'] as String? ?? '',
       vpnActive: json['vpnActive'] as bool? ?? false,
+      protocolFilter: json['protocolFilter'] as String? ?? 'all',
     );
   }
 }
