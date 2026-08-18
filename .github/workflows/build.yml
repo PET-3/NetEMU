@@ -36,10 +36,15 @@ jobs:
         run: flutter test || true
 
       - name: Build APK (release)
+        env:
+          # Keep Gradle memory within GHA runner limits
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2G"
         run: flutter build apk --release --split-per-abi
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: netemu-apk
-          path: build/app/outputs/flutter-apk/*.apk
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
