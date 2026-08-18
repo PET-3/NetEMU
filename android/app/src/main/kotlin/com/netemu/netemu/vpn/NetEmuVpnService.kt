@@ -39,6 +39,8 @@ class NetEmuVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private val running = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor()
+    private val notifyScheduler = Executors.newSingleThreadScheduledExecutor()
+    private var notifyTask: java.util.concurrent.ScheduledFuture<*>? = null
     private var tcpProxy: TcpProxy? = null
     private var udpProxy: UdpProxy? = null
 
