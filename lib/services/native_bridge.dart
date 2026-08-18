@@ -203,4 +203,21 @@ class NativeBridge {
       return false;
     }
   }
+
+  Future<void> setNotificationEnabled(bool enabled) async {
+    try {
+      await _method.invokeMethod('setNotificationEnabled', {'enabled': enabled});
+    } on PlatformException {
+      // ignore
+    }
+  }
+
+  Future<void> setHideFromRecents(bool hide) async {
+    try {
+      await _method.invokeMethod('setHideFromRecents', {'hide': hide});
+    } on PlatformException {
+      // ignore
+    }
+  }
+
 }

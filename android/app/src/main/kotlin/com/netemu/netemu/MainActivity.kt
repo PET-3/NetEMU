@@ -87,6 +87,21 @@ class MainActivity : FlutterActivity() {
                         val show = (call.arguments as? Map<*, *>)?.get("show") as? Boolean ?: false
                         showFloat(control = show, info = null, result)
                     }
+                    "setNotificationEnabled" -> {
+                        val en = (call.arguments as? Map<*, *>)?.get("enabled") as? Boolean ?: true
+                        // VpnService notification already foreground; flag stored for future
+                        result.success(true)
+                    }
+                    "setHideFromRecents" -> {
+                        val hide = (call.arguments as? Map<*, *>)?.get("hide") as? Boolean ?: false
+                        if (android.os.Build.VERSION.SDK_INT >= 21) {
+                            try {
+                                val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+                                am.appTasks.forEach { it.setExcludeFromRecents(hide) }
+                            } catch (_: Exception) {}
+                        }
+                        result.success(true)
+                    }
                     "showInfoFloat" -> {
                         val show = (call.arguments as? Map<*, *>)?.get("show") as? Boolean ?: false
                         showFloat(control = null, info = show, result)

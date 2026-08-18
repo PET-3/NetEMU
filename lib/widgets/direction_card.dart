@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/network_config.dart';
 import 'param_editor.dart';
+import 'param_infos.dart';
 
 const kBandwidthOptions = <int>[
   0, 64, 128, 256, 512, 1024, 2048, 5120, 10240, 20480, 51200,
@@ -36,7 +37,6 @@ class DirectionCard extends StatelessWidget {
             Text(title,
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
             ParamEditor(
               label: '延迟',
               value: config.delayMs.toDouble(),
@@ -45,6 +45,7 @@ class DirectionCard extends StatelessWidget {
               divisions: 60,
               unit: 'ms',
               readOnly: readOnly,
+              info: ParamInfos.delay,
               onChanged: readOnly
                   ? null
                   : (v) => onChanged?.call(config.copyWith(delayMs: v.round())),
@@ -57,6 +58,7 @@ class DirectionCard extends StatelessWidget {
               divisions: 50,
               unit: 'ms',
               readOnly: readOnly,
+              info: ParamInfos.jitter,
               onChanged: readOnly
                   ? null
                   : (v) =>
@@ -68,21 +70,22 @@ class DirectionCard extends StatelessWidget {
                 value: config.bandwidthKbps.toDouble(),
                 min: 0,
                 max: 51200,
-                unit: config.bandwidthKbps <= 0 ? '不限' : 'Kbps',
+                unit: config.bandwidthKbps <= 0 ? '' : 'Kbps',
                 readOnly: true,
+                info: ParamInfos.bandwidth,
               )
             else
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('带宽'),
+                  const Spacer(),
                   DropdownButton<int>(
                     value: kBandwidthOptions.contains(config.bandwidthKbps)
                         ? config.bandwidthKbps
                         : 0,
                     items: kBandwidthOptions.map((b) {
                       final label = b == 0
-                          ? '不限速'
+                          ? '不限'
                           : (b >= 1024 ? '${b ~/ 1024} Mbps' : '$b Kbps');
                       return DropdownMenuItem(value: b, child: Text(label));
                     }).toList(),
@@ -103,16 +106,16 @@ class DirectionCard extends StatelessWidget {
               unit: '%',
               isInt: false,
               readOnly: readOnly,
+              info: ParamInfos.loss,
               onChanged: readOnly
                   ? null
                   : (v) => onChanged?.call(config.copyWith(lossPercent: v)),
             ),
-            if (!readOnly) ...[
-              const SizedBox(height: 4),
+            if (!readOnly)
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('连续丢包模式'),
+                  const Text('连续丢包'),
+                  const Spacer(),
                   SegmentedButton<ContinuousMode>(
                     segments: const [
                       ButtonSegment(
@@ -128,25 +131,15 @@ class DirectionCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ] else
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('连续丢包模式'),
-                    Text(isTime ? '时间' : '包数'),
-                  ],
-                ),
-              ),
             ParamEditor(
               label: isTime ? '放行时间' : '放行包数',
               value: config.continuousPass.toDouble(),
               min: 0,
               max: isTime ? 10000 : 100,
               divisions: isTime ? 100 : 50,
-              unit: isTime ? 'ms' : '包',
+              unit: isTime ? 'ms' : '',
               readOnly: readOnly,
+              info: ParamInfos.contPass,
               onChanged: readOnly
                   ? null
                   : (v) => onChanged
@@ -158,8 +151,9 @@ class DirectionCard extends StatelessWidget {
               min: 0,
               max: isTime ? 10000 : 100,
               divisions: isTime ? 100 : 50,
-              unit: isTime ? 'ms' : '包',
+              unit: isTime ? 'ms' : '',
               readOnly: readOnly,
+              info: ParamInfos.contDrop,
               onChanged: readOnly
                   ? null
                   : (v) => onChanged

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/network_config.dart';
 import '../services/network_controller.dart';
@@ -14,25 +13,10 @@ class ProfilesScreen extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('配置管理'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.upload_file_outlined),
-            tooltip: '备份导出',
-            onPressed: () => _exportBackup(context, ctrl),
-          ),
-          IconButton(
-            icon: const Icon(Icons.download_outlined),
-            tooltip: '恢复导入',
-            onPressed: () => _importBackup(context, ctrl),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('配置')),
       body: ctrl.profiles.isEmpty
-          ? const Center(child: Text('暂无配置，点击下方新建'))
+          ? const Center(child: Text('暂无配置'))
           : ListView.builder(
-              // 底部留白，避免被 FAB 挡住删除按钮
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               itemCount: ctrl.profiles.length,
               itemBuilder: (context, i) {
@@ -45,86 +29,74 @@ class ProfilesScreen extends StatelessWidget {
                   color: selected
                       ? theme.colorScheme.secondaryContainer
                       : theme.colorScheme.surfaceContainerHighest,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          title: Text(
-                            p.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(
-                            '↑ ${p.upload.delayMs}ms / ${p.upload.lossPercent}%  '
-                            '↓ ${p.download.delayMs}ms / ${p.download.lossPercent}%\n'
-                            '协议: ${p.protocol.name} · 后端: ${p.backend}',
-                          ),
-                          isThreeLine: true,
-                          onTap: () async {
-                            await ctrl.loadProfile(p);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text('已选中「${p.name}」，主页只读运行')),
-                              );
-                            }
-                          },
+                  child: Column(
+                    children: [
+                      ListTile(
+                        title: Text(p.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                          '↑${p.upload.delayMs}ms/${p.upload.lossPercent}%  '
+                          '↓${p.download.delayMs}ms/${p.download.lossPercent}%',
                         ),
-                        const Divider(height: 1),
-                        // 操作行：避免挤在 trailing 被 FAB 挡住
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          child: Row(
-                            children: [
-                              if (selected)
-                                Chip(
-                                  avatar: Icon(Icons.check_circle,
-                                      size: 16,
-                                      color: theme.colorScheme.primary),
-                                  label: const Text('使用中'),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              const Spacer(),
-                              TextButton.icon(
-                                onPressed: () =>
-                                    _openEditor(context, ctrl, existing: p),
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                                label: const Text('修改'),
+                        onTap: () async {
+                          await ctrl.selectProfile(p);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('已选中「${p.name}」')),
+                            );
+                          }
+                        },
+                      ),
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        child: Row(
+                          children: [
+                            if (selected)
+                              const Chip(
+                                label: Text('使用中'),
+                                visualDensity: VisualDensity.compact,
                               ),
-                              TextButton.icon(
-                                onPressed: () =>
-                                    _confirmDelete(context, ctrl, p.name),
-                                icon: Icon(Icons.delete_outline,
-                                    size: 18, color: theme.colorScheme.error),
-                                label: Text('删除',
-                                    style: TextStyle(
-                                        color: theme.colorScheme.error)),
-                              ),
-                            ],
-                          ),
+                            const Spacer(),
+                            TextButton.icon(
+                              onPressed: () => _edit(context, ctrl, p),
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              label: const Text('修改'),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => _delete(context, ctrl, p.name),
+                              icon: Icon(Icons.delete_outline,
+                                  size: 18,
+                                  color: theme.colorScheme.error),
+                              label: Text('删除',
+                                  style: TextStyle(
+                                      color: theme.colorScheme.error)),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 );
               },
             ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openEditor(context, ctrl, existing: null),
+        onPressed: () => _create(context, ctrl),
         icon: const Icon(Icons.add),
-        label: const Text('新建配置'),
+        label: const Text('新建'),
       ),
     );
   }
 
-  Future<void> _confirmDelete(
+  Future<void> _delete(
       BuildContext context, NetworkController ctrl, String name) async {
-    final confirm = await showDialog<bool>(
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除配置'),
-        content: Text('确定删除「$name」？'),
+        title: const Text('删除'),
+        content: Text('删除「$name」？'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -135,125 +107,38 @@ class ProfilesScreen extends StatelessWidget {
         ],
       ),
     );
-    if (confirm == true) {
-      await ctrl.deleteProfile(name);
-    }
+    if (ok == true) await ctrl.deleteProfile(name);
   }
 
-  void _openEditor(BuildContext context, NetworkController ctrl,
-      {NetworkConfig? existing}) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _ProfileEditorPage(
-          initial: existing ??
-              NetworkConfig(
-                name: '自定义配置',
-                backend: ctrl.config.backend,
-                upload: ctrl.config.upload,
-                download: ctrl.config.download,
-                protocol: ctrl.config.protocol,
-              ),
-          isNew: existing == null,
+  void _edit(BuildContext context, NetworkController ctrl, NetworkConfig p) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => _EditorPage(initial: p, isNew: false),
+    ));
+  }
+
+  void _create(BuildContext context, NetworkController ctrl) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => _EditorPage(
+        initial: NetworkConfig(
+          name: '新配置',
+          backend: ctrl.lockedBackend.id,
         ),
+        isNew: true,
       ),
-    );
-  }
-
-  Future<void> _exportBackup(
-      BuildContext context, NetworkController ctrl) async {
-    try {
-      final json = await ctrl.exportBackupJson();
-      if (!context.mounted) return;
-      await showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('备份配置'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: SelectableText(json),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: json));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已复制到剪贴板')),
-                );
-              },
-              child: const Text('复制'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('导出失败: $e')));
-      }
-    }
-  }
-
-  Future<void> _importBackup(
-      BuildContext context, NetworkController ctrl) async {
-    final textCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('恢复配置'),
-        content: TextField(
-          controller: textCtrl,
-          maxLines: 12,
-          decoration: const InputDecoration(
-            hintText: '粘贴备份 JSON',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('导入合并')),
-        ],
-      ),
-    );
-    if (ok != true || textCtrl.text.trim().isEmpty) return;
-    try {
-      final n = await ctrl.importBackupJson(textCtrl.text.trim(), merge: true);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已导入 $n 条配置（按名称合并）')),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('导入失败: $e')));
-      }
-    }
+    ));
   }
 }
 
-/// 新建 / 修改配置全页编辑（含参数滑条+输入框）
-class _ProfileEditorPage extends StatefulWidget {
+class _EditorPage extends StatefulWidget {
   final NetworkConfig initial;
   final bool isNew;
-
-  const _ProfileEditorPage({required this.initial, required this.isNew});
+  const _EditorPage({required this.initial, required this.isNew});
 
   @override
-  State<_ProfileEditorPage> createState() => _ProfileEditorPageState();
+  State<_EditorPage> createState() => _EditorPageState();
 }
 
-class _ProfileEditorPageState extends State<_ProfileEditorPage> {
+class _EditorPageState extends State<_EditorPage> {
   late TextEditingController _nameCtrl;
   late NetworkConfig _cfg;
 
@@ -272,28 +157,24 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
 
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请填写名称')));
-      return;
-    }
+    if (name.isEmpty) return;
     final ctrl = context.read<NetworkController>();
     final toSave = _cfg.copyWith(name: name);
-    ctrl.forceUpdateConfig(toSave);
-    await ctrl.saveCurrentProfile();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(widget.isNew ? '已创建并选中「$name」' : '已保存「$name」')),
-      );
-      Navigator.pop(context);
+    if (widget.isNew) {
+      await ctrl.createProfile(toSave);
+    } else {
+      // 修改只改当前配置，不新增（名称不可变时用原名）
+      final fixed = toSave.copyWith(name: widget.initial.name);
+      await ctrl.updateExistingProfile(fixed);
     }
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isNew ? '新建配置' : '修改配置'),
+        title: Text(widget.isNew ? '新建' : '修改'),
         actions: [
           TextButton(onPressed: _save, child: const Text('保存')),
         ],
@@ -303,43 +184,35 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
         children: [
           TextField(
             controller: _nameCtrl,
+            enabled: widget.isNew, // 修改时不允许改名造成“新增”
             decoration: const InputDecoration(
-              labelText: '配置名称',
+              labelText: '名称',
               border: OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 16),
-          Text('协议过滤', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           SegmentedButton<ProtocolFilter>(
             segments: const [
-              ButtonSegment(value: ProtocolFilter.all, label: Text('全部')),
+              ButtonSegment(value: ProtocolFilter.all, label: Text('全')),
               ButtonSegment(value: ProtocolFilter.tcp, label: Text('TCP')),
               ButtonSegment(value: ProtocolFilter.udp, label: Text('UDP')),
             ],
             selected: {_cfg.protocol},
-            onSelectionChanged: (s) {
-              setState(() => _cfg = _cfg.copyWith(protocol: s.first));
-            },
+            onSelectionChanged: (s) =>
+                setState(() => _cfg = _cfg.copyWith(protocol: s.first)),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           DirectionCard(
-            title: '上行 (Upload)',
+            title: '上行',
             config: _cfg.upload,
             onChanged: (c) => setState(() => _cfg = _cfg.copyWith(upload: c)),
           ),
           const SizedBox(height: 12),
           DirectionCard(
-            title: '下行 (Download)',
+            title: '下行',
             config: _cfg.download,
             onChanged: (c) =>
                 setState(() => _cfg = _cfg.copyWith(download: c)),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: _save,
-            icon: const Icon(Icons.save),
-            label: const Text('保存配置'),
           ),
         ],
       ),

@@ -6,11 +6,16 @@ import '../models/network_config.dart';
 import 'native_bridge.dart';
 import 'config_service.dart';
 
+/// 运行来源：已选配置 / 测试页
+enum RunSource { none, profile, test }
+
 class NetworkController extends ChangeNotifier {
   final NativeBridge bridge = NativeBridge();
   final ConfigService configService = ConfigService();
 
   NetworkConfig _config = const NetworkConfig();
+  /// 测试页独立参数（不自动写入配置）
+  NetworkConfig _testConfig = const NetworkConfig(name: '测试');
   BackendStatus _status = const BackendStatus();
   SimulationStatistics _stats = const SimulationStatistics();
   List<NetworkInterfaceInfo> _interfaces = [];
@@ -20,25 +25,39 @@ class NetworkController extends ChangeNotifier {
   bool _running = false;
   String _recommendedReason = '';
 
-  /// 非 null 表示已选中某个配置：主页只读展示，按该配置运行
   String? _selectedProfileName;
+  RunSource _runSource = RunSource.none;
+  bool _showControlFloat = false;
+  bool _showInfoFloat = false;
+  bool _showNotification = true;
+  bool _hideFromRecents = false;
 
-  NetworkConfig get config => _config;
+  /// 全局锁定后端（不再 auto 切换）
+  BackendType _lockedBackend = BackendType.vpn;
+
+  NetworkConfig get config =>
+      _runSource == RunSource.test ? _testConfig : _config;
+  NetworkConfig get testConfig => _testConfig;
+  NetworkConfig get profileConfig => _config;
   BackendStatus get status => _status;
   SimulationStatistics get stats => _stats;
   List<NetworkInterfaceInfo> get interfaces => _interfaces;
   List<NetworkConfig> get profiles => _profiles;
-  List<String> get logs => _logs;
+  List<String> get logs => List.unmodifiable(_logs);
   bool get initialized => _initialized;
   bool get running => _running;
   String get recommendedReason => _recommendedReason;
-  BackendType get activeBackend => _status.active;
-
-  /// 是否处于「已选配置」只读模式
-  bool get isProfileSelected =>
-      _selectedProfileName != null && _selectedProfileName!.isNotEmpty;
-
+  BackendType get activeBackend => _lockedBackend;
+  BackendType get lockedBackend => _lockedBackend;
   String? get selectedProfileName => _selectedProfileName;
+  RunSource get runSource => _runSource;
+  bool get isProfileSelected =>
+      _runSource == RunSource.profile && _selectedProfileName != null;
+  bool get isTestMode => _runSource == RunSource.test;
+  bool get showControlFloat => _showControlFloat;
+  bool get showInfoFloat => _showInfoFloat;
+  bool get showNotification => _showNotification;
+  bool get hideFromRecents => _hideFromRecents;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -47,9 +66,7 @@ class NetworkController extends ChangeNotifier {
       _stats = s;
       notifyListeners();
     });
-    bridge.logStream.listen((msg) {
-      _addLog(msg);
-    });
+    bridge.logStream.listen(_addLog);
 
     await _detect();
     _profiles = await configService.loadProfiles();
@@ -57,15 +74,16 @@ class NetworkController extends ChangeNotifier {
       _profiles = List.from(ConfigService.presets);
       await configService.saveProfiles(_profiles);
     }
+    final savedBackend = await configService.getLockedBackend();
+    if (savedBackend != null) {
+      _lockedBackend = savedBackend;
+    }
     final active = await configService.getActiveProfile();
     if (active != null) {
-      _config = active;
+      _config = active.copyWith(backend: _lockedBackend.id);
       _selectedProfileName = active.name;
-    } else {
-      _config = const NetworkConfig(name: '自由调节');
-      _selectedProfileName = null;
+      _runSource = RunSource.profile;
     }
-
     _interfaces = await bridge.getInterfaces();
     _initialized = true;
     notifyListeners();
@@ -80,31 +98,24 @@ class NetworkController extends ChangeNotifier {
       type: BackendType.root,
       available: rootAvail,
       authorized: rootAvail,
-      message: rootAvail ? 'su 可用，可直接下发 tc' : '无 Root',
+      message: rootAvail ? 'su 可用' : '无 Root',
       priority: 100,
     ));
 
     final shizuku = Map<String, dynamic>.from(data['shizuku'] as Map? ?? {});
-    final installed = shizuku['installed'] == true;
-    final shizukuOk = shizuku['authorized'] == true;
     caps.add(BackendCapability(
       type: BackendType.shizuku,
-      available: installed,
-      authorized: shizukuOk,
-      message: installed
-          ? (shizukuOk
-              ? '已授权'
-              : '已安装但未完成 API 授权。当前版本未集成 Shizuku 官方库，应用不会出现在 Shizuku 授权列表中；请优先使用 Root 或 VPN，或导出 ADB 命令。')
-          : '未安装 Shizuku',
+      available: shizuku['installed'] == true,
+      authorized: shizuku['authorized'] == true,
+      message: (shizuku['message'] as String?) ?? '',
       priority: 80,
     ));
 
-    // ADB：应用内无法直接执行，始终提供「导出命令」
     caps.add(const BackendCapability(
       type: BackendType.adb,
       available: true,
       authorized: true,
-      message: '应用内不直接执行 adb。请在「后端」页导出命令，到电脑上执行。',
+      message: '仅导出命令',
       priority: 40,
     ));
 
@@ -112,84 +123,177 @@ class NetworkController extends ChangeNotifier {
       type: BackendType.vpn,
       available: true,
       authorized: true,
-      message: '无 Root 可用，用户态模拟（推荐）',
+      message: '无 Root',
       priority: 20,
     ));
 
-    final recommended = caps
-        .where((c) => c.available && c.authorized)
-        .fold<BackendCapability?>(
-            null,
-            (prev, c) =>
-                prev == null || c.priority > prev.priority ? c : prev);
-
-    _recommendedReason = recommended != null
-        ? '推荐 ${recommended.type.label}: ${recommended.message}'
-        : '使用 VPNService';
-
+    _recommendedReason = '';
     _status = BackendStatus(
-      active: recommended?.type ?? BackendType.vpn,
-      running: false,
+      active: _lockedBackend,
+      running: _running,
       capabilities: caps,
-      recommendedReason: _recommendedReason,
+      recommendedReason: '',
     );
     notifyListeners();
   }
 
-  void updateConfig(NetworkConfig config) {
-    // 已选配置模式下主页不可改；配置页编辑会先 clear 或走 saveProfile
-    if (isProfileSelected) {
-      _addLog('当前为配置只读模式，请到「配置」页修改或点击「自由调节」');
-      return;
-    }
-    _config = config;
+  Future<void> setLockedBackend(BackendType type) async {
+    if (type == BackendType.auto) type = BackendType.vpn;
+    _lockedBackend = type;
+    await configService.setLockedBackend(type);
+    _config = _config.copyWith(backend: type.id);
+    _testConfig = _testConfig.copyWith(backend: type.id);
+    _status = BackendStatus(
+      active: type,
+      running: _running,
+      capabilities: _status.capabilities,
+      recommendedReason: '',
+    );
     notifyListeners();
     if (_running) {
-      bridge.updateConfig(config);
+      await bridge.updateConfig(config.copyWith(backend: type.id));
     }
   }
 
-  /// 配置页强制更新（编辑/新建时）
-  void forceUpdateConfig(NetworkConfig config) {
-    _config = config;
+  void selectTestMode() {
+    _runSource = RunSource.test;
+    _selectedProfileName = null;
+    _testConfig = _testConfig.copyWith(backend: _lockedBackend.id);
+    notifyListeners();
+  }
+
+  Future<void> selectProfile(NetworkConfig profile) async {
+    _config = profile.copyWith(backend: _lockedBackend.id);
+    _selectedProfileName = profile.name;
+    _runSource = RunSource.profile;
+    await configService.setActiveProfile(profile.name);
     notifyListeners();
     if (_running) {
-      bridge.updateConfig(config);
+      await bridge.updateConfig(_config);
     }
+  }
+
+  void updateTestConfig(NetworkConfig c) {
+    _testConfig = c.copyWith(name: '测试', backend: _lockedBackend.id);
+    notifyListeners();
+    if (_running && _runSource == RunSource.test) {
+      bridge.updateConfig(_testConfig);
+    }
+  }
+
+  /// 修改已有配置（按名称覆盖，不新增）
+  Future<void> updateExistingProfile(NetworkConfig profile) async {
+    final list = await configService.loadProfiles();
+    final idx = list.indexWhere((p) => p.name == profile.name);
+    if (idx < 0) {
+      _addLog('配置不存在，未修改: ${profile.name}');
+      return;
+    }
+    list[idx] = profile.copyWith(backend: _lockedBackend.id);
+    await configService.saveProfiles(list);
+    _profiles = list;
+    if (_selectedProfileName == profile.name) {
+      _config = list[idx];
+      if (_running) await bridge.updateConfig(_config);
+    }
+    notifyListeners();
+  }
+
+  Future<void> saveTestAsProfile(String name) async {
+    final p = _testConfig.copyWith(name: name, backend: _lockedBackend.id);
+    await configService.saveProfile(p);
+    _profiles = await configService.loadProfiles();
+    await selectProfile(p);
+  }
+
+  Future<void> deleteProfile(String name) async {
+    await configService.deleteProfile(name);
+    _profiles = await configService.loadProfiles();
+    if (_selectedProfileName == name) {
+      _selectedProfileName = null;
+      _runSource = RunSource.none;
+    }
+    notifyListeners();
+  }
+
+  Future<void> createProfile(NetworkConfig profile) async {
+    await configService.saveProfile(
+        profile.copyWith(backend: _lockedBackend.id));
+    _profiles = await configService.loadProfiles();
+    notifyListeners();
+  }
+
+  void setShowControlFloat(bool v) {
+    _showControlFloat = v;
+    notifyListeners();
+    bridge.showControlFloat(v);
+  }
+
+  void setShowInfoFloat(bool v) {
+    _showInfoFloat = v;
+    notifyListeners();
+    bridge.showInfoFloat(v);
+  }
+
+  void setShowNotification(bool v) {
+    _showNotification = v;
+    notifyListeners();
+    bridge.setNotificationEnabled(v);
+  }
+
+  void setHideFromRecents(bool v) {
+    _hideFromRecents = v;
+    notifyListeners();
+    bridge.setHideFromRecents(v);
   }
 
   Future<bool> start() async {
     if (_running) return true;
-    final ok = await bridge.startSimulation(_config);
+    if (_runSource == RunSource.none) {
+      _addLog('请先选择「测试」或一个配置');
+      return false;
+    }
+    final cfg = config.copyWith(backend: _lockedBackend.id);
+    final ok = await bridge.startSimulation(cfg);
     if (ok) {
       _running = true;
       _status = BackendStatus(
-        active: _status.active,
+        active: _lockedBackend,
         running: true,
         capabilities: _status.capabilities,
-        recommendedReason: _status.recommendedReason,
+        recommendedReason: '',
       );
-      _addLog('Simulation started with backend: ${_config.backend}');
-      notifyListeners();
+      _addLog('已启动 · ${_runSource == RunSource.test ? "测试" : _selectedProfileName} · ${_lockedBackend.label}');
+      if (_showControlFloat) bridge.showControlFloat(true);
+      if (_showInfoFloat) bridge.showInfoFloat(true);
     } else {
-      _addLog('Failed to start simulation');
+      _addLog('启动失败');
     }
+    notifyListeners();
     return ok;
   }
 
   Future<bool> stop() async {
     if (!_running) return true;
-    final ok = await bridge.stopSimulation();
+    await bridge.stopSimulation();
     _running = false;
     _status = BackendStatus(
-      active: _status.active,
+      active: _lockedBackend,
       running: false,
       capabilities: _status.capabilities,
-      recommendedReason: _status.recommendedReason,
+      recommendedReason: '',
     );
-    _addLog('Simulation stopped');
+    _addLog('已停止');
     notifyListeners();
-    return ok;
+    return true;
+  }
+
+  Future<void> toggleRun() async {
+    if (_running) {
+      await stop();
+    } else {
+      await start();
+    }
   }
 
   Future<void> refreshBackends() async {
@@ -198,47 +302,11 @@ class NetworkController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setBackend(BackendType type) async {
-    _config = _config.copyWith(backend: type.id);
+  void clearLogs() {
+    _logs.clear();
     notifyListeners();
   }
 
-  Future<void> saveCurrentProfile() async {
-    await configService.saveProfile(_config);
-    _profiles = await configService.loadProfiles();
-    await configService.setActiveProfile(_config.name);
-    _selectedProfileName = _config.name;
-    notifyListeners();
-  }
-
-  /// 选中配置：主页只读 + 按该配置运行
-  Future<void> loadProfile(NetworkConfig profile) async {
-    _config = profile;
-    _selectedProfileName = profile.name;
-    await configService.setActiveProfile(profile.name);
-    if (_running) {
-      await bridge.updateConfig(profile);
-    }
-    notifyListeners();
-  }
-
-  /// 取消选中 → 主页可自由调节参数
-  Future<void> clearProfileSelection() async {
-    _selectedProfileName = null;
-    await configService.setActiveProfile('');
-    notifyListeners();
-  }
-
-  Future<void> deleteProfile(String name) async {
-    await configService.deleteProfile(name);
-    _profiles = await configService.loadProfiles();
-    if (_selectedProfileName == name) {
-      _selectedProfileName = null;
-    }
-    notifyListeners();
-  }
-
-  /// 导出全部配置为 JSON 字符串（备份）
   Future<String> exportBackupJson() async {
     final list = await configService.loadProfiles();
     return const JsonEncoder.withIndent('  ').convert({
@@ -248,20 +316,18 @@ class NetworkController extends ChangeNotifier {
     });
   }
 
-  /// 从 JSON 恢复配置（覆盖或合并）
   Future<int> importBackupJson(String raw, {bool merge = true}) async {
     final decoded = jsonDecode(raw);
-    if (decoded is! Map) throw FormatException('无效备份格式');
+    if (decoded is! Map) throw FormatException('无效备份');
     final list = decoded['profiles'];
     if (list is! List) throw FormatException('缺少 profiles');
     final imported = <NetworkConfig>[];
     for (final item in list) {
       if (item is Map) {
-        imported.add(
-            NetworkConfig.fromJson(Map<String, dynamic>.from(item)));
+        imported.add(NetworkConfig.fromJson(Map<String, dynamic>.from(item)));
       }
     }
-    if (imported.isEmpty) throw FormatException('备份中没有配置');
+    if (imported.isEmpty) throw FormatException('空备份');
     if (merge) {
       final existing = await configService.loadProfiles();
       final byName = {for (final p in existing) p.name: p};
@@ -280,7 +346,7 @@ class NetworkController extends ChangeNotifier {
   void _addLog(String msg) {
     final ts = DateTime.now().toIso8601String().substring(11, 19);
     _logs.insert(0, '[$ts] $msg');
-    if (_logs.length > 200) _logs.removeLast();
+    if (_logs.length > 300) _logs.removeLast();
     notifyListeners();
   }
 

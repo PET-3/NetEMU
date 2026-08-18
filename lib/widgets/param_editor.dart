@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'info_icon.dart';
 
-/// 数值调节：左侧标签 + 中间输入框 + 下方拖动条（只读时仅显示文字）
 class ParamEditor extends StatefulWidget {
   final String label;
   final double value;
@@ -11,6 +11,7 @@ class ParamEditor extends StatefulWidget {
   final String unit;
   final bool readOnly;
   final bool isInt;
+  final String? info;
   final ValueChanged<double>? onChanged;
 
   const ParamEditor({
@@ -23,6 +24,7 @@ class ParamEditor extends StatefulWidget {
     this.unit = '',
     this.readOnly = false,
     this.isInt = true,
+    this.info,
     this.onChanged,
   });
 
@@ -38,8 +40,7 @@ class _ParamEditorState extends State<ParamEditor> {
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: _fmt(widget.value));
-    _focus = FocusNode();
-    _focus.addListener(() {
+    _focus = FocusNode()..addListener(() {
       if (!_focus.hasFocus) _commit();
     });
   }
@@ -59,14 +60,11 @@ class _ParamEditorState extends State<ParamEditor> {
     super.dispose();
   }
 
-  String _fmt(double v) {
-    if (widget.isInt) return v.round().toString();
-    return v.toStringAsFixed(1);
-  }
+  String _fmt(double v) =>
+      widget.isInt ? v.round().toString() : v.toStringAsFixed(1);
 
   void _commit() {
-    final raw = _ctrl.text.trim();
-    final parsed = double.tryParse(raw);
+    final parsed = double.tryParse(_ctrl.text.trim());
     if (parsed == null) {
       _ctrl.text = _fmt(widget.value);
       return;
@@ -81,34 +79,38 @@ class _ParamEditorState extends State<ParamEditor> {
     final theme = Theme.of(context);
     if (widget.readOnly) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(widget.label, style: theme.textTheme.bodyMedium),
+            if (widget.info != null)
+              InfoIcon(title: widget.label, message: widget.info!),
+            const Spacer(),
             Text(
               '${_fmt(widget.value)}${widget.unit.isEmpty ? '' : ' ${widget.unit}'}',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ],
         ),
       );
     }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Expanded(child: Text(widget.label)),
+            Text(widget.label),
+            if (widget.info != null)
+              InfoIcon(title: widget.label, message: widget.info!),
+            const Spacer(),
             SizedBox(
               width: 88,
               child: TextField(
                 controller: _ctrl,
                 focusNode: _focus,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                 ],

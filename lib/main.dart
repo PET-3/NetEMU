@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/network_controller.dart';
 import 'screens/home_screen.dart';
-import 'screens/backend_screen.dart';
-import 'screens/interfaces_screen.dart';
+import 'screens/test_screen.dart';
 import 'screens/profiles_screen.dart';
-import 'screens/logs_screen.dart';
+import 'screens/settings_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,51 +52,78 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  static const _pages = [
-    HomeScreen(),
-    BackendScreen(),
-    InterfacesScreen(),
-    ProfilesScreen(),
-    LogsScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    MainShellSwitch.switchTab = (i) {
+      if (mounted) setState(() => _index = i);
+    };
+  }
+
+  @override
+  void dispose() {
+    MainShellSwitch.switchTab = null;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final ctrl = context.watch<NetworkController>();
+    // 测试页：仅在「测试模式」或未选配置时显示入口；选中配置后底部不显示测试
+    final showTest = !ctrl.isProfileSelected;
+
+    final pages = <Widget>[
+      const HomeScreen(),
+      if (showTest) const TestScreen(),
+      const ProfilesScreen(),
+      const SettingsScreen(),
+    ];
+
+    // 映射：首页 0；若有测试则 1 为测试，否则 1 为配置…
+    final destinations = <NavigationDestination>[
+      const NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home),
+        label: '首页',
+      ),
+      if (showTest)
+        const NavigationDestination(
+          icon: Icon(Icons.science_outlined),
+          selectedIcon: Icon(Icons.science),
+          label: '测试',
+        ),
+      const NavigationDestination(
+        icon: Icon(Icons.folder_outlined),
+        selectedIcon: Icon(Icons.folder),
+        label: '配置',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.settings_outlined),
+        selectedIcon: Icon(Icons.settings),
+        label: '设置',
+      ),
+    ];
+
+    // 修正 index 越界（从显示测试切到不显示时）
+    if (_index >= pages.length) {
+      _index = 0;
+    }
+    // 若当前在测试页但测试被隐藏，回到首页
+    if (!showTest && _index == 1 && pages.length == 3) {
+      // 当 showTest 为 false 时 pages = [home, profiles, settings]
+      // 若之前 index 指向旧的测试，需钳制
+    }
+    final safeIndex = _index.clamp(0, pages.length - 1);
+
     return Scaffold(
       body: IndexedStack(
-        index: _index,
-        children: _pages,
+        index: safeIndex,
+        children: pages,
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
+        selectedIndex: safeIndex,
         onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: '首页',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_ethernet_outlined),
-            selectedIcon: Icon(Icons.settings_ethernet),
-            label: '后端',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.router_outlined),
-            selectedIcon: Icon(Icons.router),
-            label: '接口',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: '配置',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.article_outlined),
-            selectedIcon: Icon(Icons.article),
-            label: '日志',
-          ),
-        ],
+        destinations: destinations,
       ),
     );
   }
