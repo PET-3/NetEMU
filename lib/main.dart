@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/network_controller.dart';
-import 'services/app_prefs.dart';
 import 'theme/app_theme.dart';
 import 'l10n/app_strings.dart';
 import 'screens/home_screen.dart';
@@ -14,73 +13,23 @@ void main() {
   runApp(const NetEmuApp());
 }
 
-class NetEmuApp extends StatefulWidget {
+class NetEmuApp extends StatelessWidget {
   const NetEmuApp({super.key});
 
   @override
-  State<NetEmuApp> createState() => _NetEmuAppState();
-}
-
-class _NetEmuAppState extends State<NetEmuApp> {
-  bool _en = false;
-  UiStyle _ui = UiStyle.materialYou;
-  bool _ready = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final en = await AppPrefs.isEnglish();
-    final ui = await AppPrefs.uiStyle();
-    if (mounted) {
-      setState(() {
-        _en = en;
-        _ui = ui;
-        _ready = true;
-      });
-    }
-  }
-
-  void updateLocale(bool en) async {
-    await AppPrefs.setEnglish(en);
-    setState(() => _en = en);
-  }
-
-  void updateUiStyle(UiStyle style) async {
-    await AppPrefs.setUiStyle(style);
-    setState(() => _ui = style);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!_ready) {
-      return const MaterialApp(
-        home: Scaffold(body: Center(child: CircularProgressIndicator())),
-      );
-    }
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => NetworkController()..initialize()),
-        Provider<S>.value(value: S.of(_en)),
-        Provider<AppShellAccess>.value(
-          value: AppShellAccess(
-            setEnglish: updateLocale,
-            setUiStyle: updateUiStyle,
-            isEnglish: _en,
-            uiStyle: _ui,
-          ),
+    return ChangeNotifierProvider(
+      create: (_) => NetworkController()..initialize(),
+      child: Provider<S>.value(
+        value: const S(false), // 仅中文
+        child: MaterialApp(
+          title: 'NetEmu',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: ThemeMode.system,
+          home: const MainShell(),
         ),
-      ],
-      child: MaterialApp(
-        title: 'NetEmu',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(_ui),
-        darkTheme: AppTheme.dark(_ui),
-        themeMode: ThemeMode.system,
-        home: const MainShell(),
       ),
     );
   }
@@ -165,28 +114,5 @@ class _MainShellState extends State<MainShell> {
         destinations: destinations,
       ),
     );
-  }
-}
-
-
-/// 设置页访问语言/主题切换
-class AppShellAccess {
-  final void Function(bool en) setEnglish;
-  final void Function(UiStyle style) setUiStyle;
-  final bool isEnglish;
-  final UiStyle uiStyle;
-  AppShellAccess({
-    required this.setEnglish,
-    required this.setUiStyle,
-    required this.isEnglish,
-    required this.uiStyle,
-  });
-
-  static AppShellAccess? of(BuildContext context) {
-    try {
-      return Provider.of<AppShellAccess>(context, listen: true);
-    } catch (_) {
-      return null;
-    }
   }
 }

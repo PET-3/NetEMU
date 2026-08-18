@@ -4,10 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/backend_status.dart';
 import '../services/network_controller.dart';
 import '../l10n/app_strings.dart';
-import '../theme/app_theme.dart';
 import '../widgets/info_icon.dart';
 import '../widgets/param_infos.dart';
-import '../main.dart' show AppShellAccess;
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -17,54 +15,13 @@ class SettingsScreen extends StatelessWidget {
     final ctrl = context.watch<NetworkController>();
     final s = context.watch<S>();
     final theme = Theme.of(context);
-    final shell = AppShellAccess.of(context);
 
     return Scaffold(
       appBar: AppBar(title: Text(s.settings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // —— Language ——
-          Text(s.language, style: theme.textTheme.titleSmall),
-          const SizedBox(height: 8),
-          SegmentedButton<bool>(
-            segments: [
-              ButtonSegment(value: false, label: Text(s.chinese)),
-              ButtonSegment(value: true, label: Text(s.english)),
-            ],
-            selected: {shell?.isEnglish ?? false},
-            onSelectionChanged: (v) => shell?.setEnglish(v.first),
-          ),
-          const SizedBox(height: 20),
-
-          // —— UI style ——
-          Text(s.uiStyle, style: theme.textTheme.titleSmall),
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            color: theme.colorScheme.surfaceContainerHighest,
-            child: Column(
-              children: [
-                RadioListTile<UiStyle>(
-                  title: Text(s.styleMaterial),
-                  value: UiStyle.materialYou,
-                  groupValue: shell?.uiStyle ?? UiStyle.materialYou,
-                  onChanged: (v) {
-                    if (v != null) shell?.setUiStyle(v);
-                  },
-                ),
-                RadioListTile<UiStyle>(
-                  title: Text(s.styleSalt),
-                  value: UiStyle.salt,
-                  groupValue: shell?.uiStyle ?? UiStyle.materialYou,
-                  onChanged: (v) {
-                    if (v != null) shell?.setUiStyle(v);
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
+          // —— Backend ——
 
           // —— Backend ——
           TitledRow(
@@ -85,7 +42,7 @@ class SettingsScreen extends StatelessWidget {
               child: ListTile(
                 title: Text(c.type.label),
                 subtitle: Text(
-                  '${c.available ? (s.en ? "Available" : "可用") : (s.en ? "Unavailable" : "不可用")} · ${c.message}',
+                  '${c.available ? "可用" : "不可用"} · ${c.message}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -100,7 +57,7 @@ class SettingsScreen extends StatelessWidget {
           FilledButton.tonalIcon(
             onPressed: () => _exportAdb(context, ctrl),
             icon: const Icon(Icons.terminal),
-            label: Text(s.en ? 'Export ADB commands' : '导出 ADB 命令'),
+            label: const Text('导出 ADB 命令'),
           ),
           const SizedBox(height: 24),
 
@@ -119,7 +76,7 @@ class SettingsScreen extends StatelessWidget {
               )),
           TextButton(
               onPressed: ctrl.refreshBackends,
-              child: Text(s.en ? 'Refresh' : '刷新')),
+              child: const Text('刷新')),
           const SizedBox(height: 24),
 
           TitledRow(
@@ -141,7 +98,7 @@ class SettingsScreen extends StatelessWidget {
             child: SizedBox(
               height: 180,
               child: ctrl.logs.isEmpty
-                  ? Center(child: Text(s.en ? 'No logs' : '暂无日志'))
+                  ? const Center(child: Text('暂无日志'))
                   : ListView.builder(
                       padding: const EdgeInsets.all(8),
                       itemCount: ctrl.logs.length,
@@ -195,17 +152,6 @@ class SettingsScreen extends StatelessWidget {
                   SelectableText(
                     'https://github.com/PET-3/NetEMU',
                     style: TextStyle(color: theme.colorScheme.primary),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(s.thanks),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '· 暮雪辞弱网 — 弱网模拟参考\n'
-                    '· Image Toolbox (T8RIN) — Material You / 动画启发\n'
-                    '  https://github.com/T8RIN/ImageToolbox\n'
-                    '· SaltUI (Moriafly) — 紧凑 UI 启发\n'
-                    '  https://github.com/Moriafly/SaltUI',
-                    style: TextStyle(height: 1.4),
                   ),
                   const SizedBox(height: 12),
                   Text(s.contact),

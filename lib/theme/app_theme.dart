@@ -1,64 +1,37 @@
 import 'package:flutter/material.dart';
 
-enum UiStyle { materialYou, salt }
-
 class AppTheme {
-  static ThemeData light(UiStyle style) {
-    final seed = style == UiStyle.salt
-        ? const Color(0xFF1A73E8)
-        : const Color(0xFF1565C0);
-    return _build(
-      ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
-      style,
+  static ThemeData light() {
+    final cs = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF1565C0),
+      brightness: Brightness.light,
     );
+    return _build(cs);
   }
 
-  static ThemeData dark(UiStyle style) {
-    final seed = style == UiStyle.salt
-        ? const Color(0xFF8AB4F8)
-        : const Color(0xFF90CAF9);
-    return _build(
-      ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
-      style,
+  static ThemeData dark() {
+    final cs = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF90CAF9),
+      brightness: Brightness.dark,
     );
+    return _build(cs);
   }
 
-  static ThemeData _build(ColorScheme cs, UiStyle style) {
-    final isSalt = style == UiStyle.salt;
+  static ThemeData _build(ColorScheme cs) {
     return ThemeData(
       colorScheme: cs,
       useMaterial3: true,
       cardTheme: CardThemeData(
-        elevation: isSalt ? 0 : 0.5,
-        margin: EdgeInsets.symmetric(
-          horizontal: isSalt ? 12 : 0,
-          vertical: isSalt ? 4 : 6,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(isSalt ? 10 : 16),
-          side: isSalt
-              ? BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))
-              : BorderSide.none,
-        ),
-      ),
-      listTileTheme: ListTileThemeData(
-        dense: isSalt,
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: isSalt ? 12 : 16,
-          vertical: isSalt ? 0 : 4,
-        ),
+        elevation: 0.5,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        height: isSalt ? 64 : 72,
+        height: 72,
         indicatorShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(isSalt ? 8 : 16),
+          borderRadius: BorderRadius.circular(16),
         ),
       ),
-      appBarTheme: AppBarTheme(
-        centerTitle: isSalt,
-        elevation: 0,
-        scrolledUnderElevation: isSalt ? 0 : 1,
-      ),
+      appBarTheme: const AppBarTheme(elevation: 0, scrolledUnderElevation: 1),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: ZoomPageTransitionsBuilder(),
