@@ -35,16 +35,22 @@ jobs:
       - name: Test
         run: flutter test || true
 
-      - name: Build APK (release)
+      - name: Build APK (arm64-v8a only)
         env:
-          # Keep Gradle memory within GHA runner limits
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2G"
-        run: flutter build apk --release --split-per-abi
+        # target-platform avoids multi-ABI; no --split-per-abi (conflicts with abiFilters)
+        run: flutter build apk --release --target-platform android-arm64
 
-      - name: Upload APK artifacts
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          SRC=$(ls build/app/outputs/flutter-apk/*.apk | head -1)
+          cp "$SRC" dist/NetEMU-arm64-v8a.apk
+          ls -lh dist/
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: netemu-apk
-          path: |
-            build/app/outputs/flutter-apk/*.apk
+          name: NetEMU-arm64-v8a
+          path: dist/NetEMU-arm64-v8a.apk
           if-no-files-found: error
