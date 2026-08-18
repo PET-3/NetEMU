@@ -29,6 +29,8 @@ jobs:
         run: flutter pub get
 
       - name: Build release APK
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2G"
         run: flutter build apk --release
 
       - name: Create Release
