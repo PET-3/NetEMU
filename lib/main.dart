@@ -70,7 +70,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final ctrl = context.watch<NetworkController>();
     // 测试页：仅在「测试模式」或未选配置时显示入口；选中配置后底部不显示测试
-    final showTest = !ctrl.isProfileSelected;
+    final showTest = ctrl.isTestMode; // 仅首页选择「测试」后显示测试页
 
     final pages = <Widget>[
       const HomeScreen(),

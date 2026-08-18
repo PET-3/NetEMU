@@ -21,6 +21,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
+/**
+ * 可最小化悬浮窗：默认紧凑，展开显示更完整信息与快捷预设。
+ */
 class FloatWindowService : Service() {
 
     companion object {
@@ -43,6 +46,7 @@ class FloatWindowService : Service() {
     private var controlView: View? = null
     private var infoView: View? = null
     private var controlExpanded = false
+    private var infoExpanded = true
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
     private var infoTask: ScheduledFuture<*>? = null
 
@@ -91,26 +95,28 @@ class FloatWindowService : Service() {
         if (!hasOverlayPermission(this)) return
 
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xE6121A22.toInt())
-            setPadding(dp(8f), dp(4f), dp(8f), dp(4f))
-            minimumHeight = dp(28f)
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xF01A2332.toInt())
+            setPadding(dp(10f), dp(8f), dp(10f), dp(8f))
+            minimumWidth = dp(120f)
         }
 
-        val pill = TextView(this).apply {
-            text = "N"
+        val title = TextView(this).apply {
+            text = "NetEmu ▾"
             setTextColor(0xFF90CAF9.toInt())
-            textSize = 12f
-            setPadding(dp(6f), 0, dp(6f), 0)
+            textSize = 13f
+            setPadding(0, 0, 0, dp(4f))
             setOnClickListener {
                 controlExpanded = !controlExpanded
+                text = if (controlExpanded) "NetEmu ▴" else "NetEmu ▾"
                 rebuildControl(root)
             }
         }
-        root.addView(pill)
+        root.tag = title
+        root.addView(title)
         rebuildControl(root)
 
-        val lp = baseLp(dp(48f))
+        val lp = baseLp(dp(56f))
         makeDraggable(root, lp)
         try {
             wm?.addView(root, lp)
@@ -122,31 +128,69 @@ class FloatWindowService : Service() {
 
     private fun rebuildControl(root: LinearLayout) {
         while (root.childCount > 1) root.removeViewAt(1)
-        if (!controlExpanded) return
+        if (!controlExpanded) {
+            // 最小化：只保留标题条
+            return
+        }
+        val cfg = EmulatorConfig
+        val status = TextView(this).apply {
+            text = "↑${cfg.upload.delayMs}ms ↓${cfg.download.delayMs}ms · 丢${cfg.upload.lossPercent.toInt()}%"
+            setTextColor(0xFFB0BEC5.toInt())
+            textSize = 11f
+            setPadding(0, 0, 0, dp(6f))
+        }
+        root.addView(status)
+
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         fun chip(label: String, action: () -> Unit): TextView {
             return TextView(this).apply {
                 text = label
                 setTextColor(0xFFE3F2FD.toInt())
-                textSize = 11f
-                setPadding(dp(6f), dp(2f), dp(6f), dp(2f))
-                setOnClickListener { action() }
+                textSize = 12f
+                setBackgroundColor(0xFF263238.toInt())
+                setPadding(dp(8f), dp(4f), dp(8f), dp(4f))
+                setOnClickListener {
+                    action()
+                    // 刷新状态行
+                    if (root.childCount > 1) {
+                        (root.getChildAt(1) as? TextView)?.text =
+                            "↑${EmulatorConfig.upload.delayMs}ms ↓${EmulatorConfig.download.delayMs}ms · 丢${EmulatorConfig.upload.lossPercent.toInt()}%"
+                    }
+                }
             }
         }
         row.addView(chip("0ms") {
             EmulatorConfig.upload.delayMs = 0
             EmulatorConfig.download.delayMs = 0
+            EmulatorConfig.upload.lossPercent = 0.0
+            EmulatorConfig.download.lossPercent = 0.0
         })
-        row.addView(chip("50") {
+        val space = { root: LinearLayout ->
+            root.addView(TextView(this).apply { width = dp(6f) })
+        }
+        space(row)
+        row.addView(chip("50ms") {
             EmulatorConfig.upload.delayMs = 50
             EmulatorConfig.download.delayMs = 40
         })
-        row.addView(chip("150") {
+        space(row)
+        row.addView(chip("150ms") {
             EmulatorConfig.upload.delayMs = 150
             EmulatorConfig.download.delayMs = 120
         })
-        row.addView(chip("×") { hideControl() })
+        space(row)
+        row.addView(chip("丢10%") {
+            EmulatorConfig.upload.lossPercent = 10.0
+            EmulatorConfig.download.lossPercent = 10.0
+        })
         root.addView(row)
+
+        val row2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(6f), 0, 0)
+        }
+        row2.addView(chip("关浮窗") { hideControl() })
+        root.addView(row2)
     }
 
     private fun showInfo() {
@@ -154,14 +198,15 @@ class FloatWindowService : Service() {
         if (!hasOverlayPermission(this)) return
 
         val tv = TextView(this).apply {
-            text = infoLine()
-            setTextColor(0xFFE0E0E0.toInt())
-            textSize = 10f
-            setBackgroundColor(0xCC000000.toInt())
-            setPadding(dp(8f), dp(3f), dp(8f), dp(3f))
-            minimumHeight = dp(24f)
+            text = infoLineFull()
+            setTextColor(0xFFECEFF1.toInt())
+            textSize = 12f
+            setBackgroundColor(0xF0121A22.toInt())
+            setPadding(dp(12f), dp(8f), dp(12f), dp(8f))
+            minimumWidth = dp(160f)
             setOnClickListener {
-                if ((text?.length ?: 0) > 2) text = "·" else text = infoLine()
+                infoExpanded = !infoExpanded
+                text = if (infoExpanded) infoLineFull() else "· NetEmu"
             }
         }
         val lp = baseLp(dp(12f))
@@ -172,8 +217,9 @@ class FloatWindowService : Service() {
             infoTask = scheduler.scheduleAtFixedRate({
                 try {
                     (infoView as? TextView)?.post {
-                        val t = (infoView as TextView).text?.toString() ?: ""
-                        if (t != "·") (infoView as TextView).text = infoLine()
+                        if (infoExpanded) {
+                            (infoView as TextView).text = infoLineFull()
+                        }
                     }
                 } catch (_: Exception) {}
             }, 1, 1, TimeUnit.SECONDS)
@@ -182,17 +228,22 @@ class FloatWindowService : Service() {
         }
     }
 
-    private fun infoLine(): String {
+    private fun infoLineFull(): String {
         val up = EmulatorStats.upload
+        
         val down = EmulatorStats.download
-        return "↑${formatSpeed(up.currentSpeedBps)} ↓${formatSpeed(down.currentSpeedBps)} L${up.randomLoss.get() + down.randomLoss.get()}"
+        return buildString {
+            append("↑${formatSpeed(up.currentSpeedBps)} ↓${formatSpeed(down.currentSpeedBps)}\n")
+            append("延迟 ↑${EmulatorConfig.upload.delayMs} ↓${EmulatorConfig.download.delayMs} ms\n")
+            append("丢包 随机${up.randomLoss.get() + down.randomLoss.get()} 连续${up.continuousLoss.get() + down.continuousLoss.get()}")
+        }
     }
 
     private fun formatSpeed(bps: Double): String {
         return when {
-            bps >= 1_000_000 -> String.format("%.1fM", bps / 1_000_000)
-            bps >= 1_000 -> String.format("%.0fK", bps / 1_000)
-            else -> String.format("%.0f", bps)
+            bps >= 1_000_000 -> String.format("%.1fM/s", bps / 1_000_000)
+            bps >= 1_000 -> String.format("%.0fK/s", bps / 1_000)
+            else -> String.format("%.0fB/s", bps)
         }
     }
 

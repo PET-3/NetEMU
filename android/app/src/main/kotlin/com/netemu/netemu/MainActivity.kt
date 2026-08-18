@@ -89,7 +89,8 @@ class MainActivity : FlutterActivity() {
                     }
                     "setNotificationEnabled" -> {
                         val en = (call.arguments as? Map<*, *>)?.get("enabled") as? Boolean ?: true
-                        // VpnService notification already foreground; flag stored for future
+                        com.netemu.netemu.vpn.NetEmuVpnService.notificationEnabled = en
+                        com.netemu.netemu.vpn.NetEmuVpnService.instance?.refreshNotification()
                         result.success(true)
                     }
                     "setHideFromRecents" -> {

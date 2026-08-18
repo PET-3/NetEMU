@@ -30,6 +30,7 @@ class NetEmuVpnService : VpnService() {
         const val ACTION_UPDATE = "com.netemu.netemu.UPDATE"
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "netemu_vpn"
+        @Volatile var notificationEnabled: Boolean = true
 
         @Volatile
         var instance: NetEmuVpnService? = null
@@ -87,6 +88,10 @@ class NetEmuVpnService : VpnService() {
 
         running.set(true)
         startForeground(NOTIFICATION_ID, buildNotification())
+        notifyTask?.cancel(false)
+        notifyTask = notifyScheduler.scheduleAtFixedRate({
+            refreshNotification()
+        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
         executor.execute { tunnelLoop(fd) }
         Log.i(TAG, "VPN started (TCP+UDP proxy)")
     }
@@ -142,16 +147,39 @@ class NetEmuVpnService : VpnService() {
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val up = EmulatorStats.upload
+        val down = EmulatorStats.download
+        fun spd(bps: Double): String = when {
+            bps >= 1_000_000 -> String.format("%.1fMB/s", bps / 1_000_000)
+            bps >= 1_000 -> String.format("%.0fKB/s", bps / 1_000)
+            else -> String.format("%.0fB/s", bps)
+        }
+        val body = "↑${spd(up.currentSpeedBps)} ↓${spd(down.currentSpeedBps)} · 丢包${up.randomLoss.get() + down.randomLoss.get()} · VPN"
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("NetEmu")
-            .setContentText("网络模拟运行中 · VPN")
+            .setContentTitle("NetEmu 运行中")
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pi)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
             .build()
     }
 
+    /** 供外部定期刷新通知内容 */
+    fun refreshNotification() {
+        if (!running.get()) return
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.notify(NOTIFICATION_ID, buildNotification())
+        } catch (_: Exception) {}
+    }
+
     override fun onDestroy() {
+        notifyTask?.cancel(false)
+        notifyTask = null
+        try { notifyScheduler.shutdownNow() } catch (_: Exception) {}
         running.set(false)
         instance = null
         tcpProxy?.shutdown()
