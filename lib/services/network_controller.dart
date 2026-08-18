@@ -14,7 +14,7 @@ class NetworkController extends ChangeNotifier {
   SimulationStatistics _stats = const SimulationStatistics();
   List<NetworkInterfaceInfo> _interfaces = [];
   List<NetworkConfig> _profiles = [];
-  List<String> _logs = [];
+  final List<String> _logs = [];
   bool _initialized = false;
   bool _running = false;
   String _recommendedReason = '';
