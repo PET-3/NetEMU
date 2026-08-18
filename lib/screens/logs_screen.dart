@@ -2,24 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/network_controller.dart';
 
+/// 兼容旧入口：日志已迁至「设置」
 class LogsScreen extends StatelessWidget {
   const LogsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<NetworkController>();
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('日志'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
+          TextButton(
             onPressed: () {
-              // clear is internal; for simplicity just note
+              ctrl.clearLogs();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已清除')),
+              );
             },
-            tooltip: '清空（重启后刷新）',
+            child: const Text('清除'),
           ),
         ],
       ),
@@ -28,17 +29,10 @@ class LogsScreen extends StatelessWidget {
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: ctrl.logs.length,
-              itemBuilder: (context, i) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(
-                    ctrl.logs[i],
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                );
-              },
+              itemBuilder: (_, i) => Text(
+                ctrl.logs[i],
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              ),
             ),
     );
   }

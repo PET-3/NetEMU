@@ -302,6 +302,25 @@ class NetworkController extends ChangeNotifier {
     notifyListeners();
   }
 
+
+  /// 兼容旧 UI：等同 setLockedBackend
+  Future<void> setBackend(BackendType type) => setLockedBackend(type);
+
+  /// 兼容旧 UI：按当前运行源更新参数
+  void updateConfig(NetworkConfig config) {
+    if (_runSource == RunSource.test) {
+      updateTestConfig(config);
+    } else if (_runSource == RunSource.profile) {
+      // 只读配置模式：忽略主页乱改；旧控件若调用则尝试热更新展示用副本
+      _config = config.copyWith(backend: _lockedBackend.id);
+      notifyListeners();
+      if (_running) bridge.updateConfig(_config);
+    } else {
+      _testConfig = config.copyWith(backend: _lockedBackend.id);
+      notifyListeners();
+    }
+  }
+
   void clearLogs() {
     _logs.clear();
     notifyListeners();
