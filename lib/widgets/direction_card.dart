@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import '../models/network_config.dart';
 
+/// Fixed bandwidth options in Kbps (0 = unlimited).
+const kBandwidthOptions = <int>[
+  0, 64, 128, 256, 512, 1024, 2048, 5120, 10240, 20480, 51200,
+];
+
 class DirectionCard extends StatelessWidget {
   final String title;
   final DirectionConfig config;
@@ -31,8 +36,8 @@ class DirectionCard extends StatelessWidget {
               label: '延迟',
               value: config.delayMs.toDouble(),
               min: 0,
-              max: 60000,
-              divisions: 120,
+              max: 3000,
+              divisions: 60,
               display: '${config.delayMs} ms',
               onChanged: (v) => onChanged(config.copyWith(delayMs: v.round())),
             ),
@@ -41,26 +46,33 @@ class DirectionCard extends StatelessWidget {
               label: '抖动',
               value: config.jitterMs.toDouble(),
               min: 0,
-              max: 60000,
-              divisions: 120,
+              max: 1000,
+              divisions: 50,
               display: '${config.jitterMs} ms',
               onChanged: (v) => onChanged(config.copyWith(jitterMs: v.round())),
             ),
-            _slider(
-              context,
-              label: '带宽',
-              value: config.bandwidthKbps.toDouble().clamp(0, 102400),
-              min: 0,
-              max: 102400,
-              divisions: 200,
-              display: config.bandwidthKbps == 0
-                  ? '不限'
-                  : (config.bandwidthKbps >= 1024
-                      ? '${(config.bandwidthKbps / 1024).toStringAsFixed(1)} Mbps'
-                      : '${config.bandwidthKbps} Kbps'),
-              onChanged: (v) =>
-                  onChanged(config.copyWith(bandwidthKbps: v.round())),
+            // Bandwidth dropdown
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('带宽'),
+                DropdownButton<int>(
+                  value: kBandwidthOptions.contains(config.bandwidthKbps)
+                      ? config.bandwidthKbps
+                      : 0,
+                  items: kBandwidthOptions.map((b) {
+                    final label = b == 0
+                        ? '不限速'
+                        : (b >= 1024 ? '${b ~/ 1024} Mbps' : '$b Kbps');
+                    return DropdownMenuItem(value: b, child: Text(label));
+                  }).toList(),
+                  onChanged: (v) {
+                    if (v != null) onChanged(config.copyWith(bandwidthKbps: v));
+                  },
+                ),
+              ],
             ),
+            const SizedBox(height: 8),
             _slider(
               context,
               label: '随机丢包',
@@ -69,8 +81,7 @@ class DirectionCard extends StatelessWidget {
               max: 100,
               divisions: 100,
               display: '${config.lossPercent.toStringAsFixed(1)} %',
-              onChanged: (v) =>
-                  onChanged(config.copyWith(lossPercent: v)),
+              onChanged: (v) => onChanged(config.copyWith(lossPercent: v)),
             ),
             const SizedBox(height: 8),
             Text('连续丢包 (放行/丢包)', style: theme.textTheme.bodySmall),
@@ -81,12 +92,12 @@ class DirectionCard extends StatelessWidget {
                     initialValue: '${config.continuousPass}',
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: '放行',
+                      labelText: '放行 0-100',
                       isDense: true,
                       border: OutlineInputBorder(),
                     ),
                     onChanged: (s) {
-                      final v = int.tryParse(s) ?? 0;
+                      final v = (int.tryParse(s) ?? 0).clamp(0, 100);
                       onChanged(config.copyWith(continuousPass: v));
                     },
                   ),
@@ -100,12 +111,12 @@ class DirectionCard extends StatelessWidget {
                     initialValue: '${config.continuousDrop}',
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: '丢包',
+                      labelText: '丢包 0-100',
                       isDense: true,
                       border: OutlineInputBorder(),
                     ),
                     onChanged: (s) {
-                      final v = int.tryParse(s) ?? 0;
+                      final v = (int.tryParse(s) ?? 0).clamp(0, 100);
                       onChanged(config.copyWith(continuousDrop: v));
                     },
                   ),

@@ -59,61 +59,50 @@ class ConfigService {
     await prefs.setString(_keyActive, name);
   }
 
-  /// Built-in example profiles.
   static List<NetworkConfig> get presets => [
         const NetworkConfig(
-          name: '4G弱网',
+          name: '正常网络',
           backend: 'auto',
-          upload: DirectionConfig(
-            delayMs: 80,
-            jitterMs: 30,
-            bandwidthKbps: 512,
-            lossPercent: 2.0,
-          ),
-          download: DirectionConfig(
-            delayMs: 60,
-            jitterMs: 20,
-            bandwidthKbps: 2048,
-            lossPercent: 1.5,
-          ),
+          upload: DirectionConfig(delayMs: 20),
+          download: DirectionConfig(delayMs: 20),
         ),
         const NetworkConfig(
-          name: '3G弱网',
+          name: '4G',
           backend: 'auto',
-          upload: DirectionConfig(
-            delayMs: 200,
-            jitterMs: 80,
-            bandwidthKbps: 128,
-            lossPercent: 5.0,
-            continuousPass: 5,
-            continuousDrop: 2,
-          ),
-          download: DirectionConfig(
-            delayMs: 150,
-            jitterMs: 50,
-            bandwidthKbps: 384,
-            lossPercent: 3.0,
-            continuousPass: 5,
-            continuousDrop: 2,
-          ),
+          upload: DirectionConfig(delayMs: 50, jitterMs: 10, lossPercent: 1.0, bandwidthKbps: 5120),
+          download: DirectionConfig(delayMs: 40, jitterMs: 10, lossPercent: 1.0, bandwidthKbps: 20480),
+        ),
+        const NetworkConfig(
+          name: '3G',
+          backend: 'auto',
+          upload: DirectionConfig(delayMs: 150, jitterMs: 50, lossPercent: 3.0, bandwidthKbps: 384),
+          download: DirectionConfig(delayMs: 120, jitterMs: 40, lossPercent: 3.0, bandwidthKbps: 1536),
         ),
         const NetworkConfig(
           name: '高延迟',
           backend: 'auto',
-          upload: DirectionConfig(delayMs: 300, jitterMs: 50),
-          download: DirectionConfig(delayMs: 300, jitterMs: 50),
+          upload: DirectionConfig(delayMs: 500, jitterMs: 100, lossPercent: 5.0),
+          download: DirectionConfig(delayMs: 500, jitterMs: 100, lossPercent: 5.0),
         ),
         const NetworkConfig(
-          name: '高丢包',
+          name: '极差网络',
           backend: 'auto',
-          upload: DirectionConfig(lossPercent: 15.0),
-          download: DirectionConfig(lossPercent: 15.0),
-        ),
-        const NetworkConfig(
-          name: '限速512K',
-          backend: 'auto',
-          upload: DirectionConfig(bandwidthKbps: 512),
-          download: DirectionConfig(bandwidthKbps: 512),
+          upload: DirectionConfig(
+            delayMs: 1000,
+            jitterMs: 300,
+            lossPercent: 10.0,
+            bandwidthKbps: 128,
+            continuousPass: 5,
+            continuousDrop: 2,
+          ),
+          download: DirectionConfig(
+            delayMs: 1000,
+            jitterMs: 300,
+            lossPercent: 10.0,
+            bandwidthKbps: 256,
+            continuousPass: 5,
+            continuousDrop: 2,
+          ),
         ),
       ];
 }

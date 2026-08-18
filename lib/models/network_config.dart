@@ -2,12 +2,12 @@ import 'dart:convert';
 
 /// Direction-specific network simulation parameters.
 class DirectionConfig {
-  final int delayMs; // 0-60000
-  final int jitterMs; // 0-60000
+  final int delayMs; // 0-3000
+  final int jitterMs; // 0-1000
   final int bandwidthKbps; // 0 = unlimited
   final double lossPercent; // 0-100
-  final int continuousPass; // consecutive packets to pass
-  final int continuousDrop; // consecutive packets to drop
+  final int continuousPass; // 0-100
+  final int continuousDrop; // 0-100
 
   const DirectionConfig({
     this.delayMs = 0,
@@ -47,12 +47,12 @@ class DirectionConfig {
 
   factory DirectionConfig.fromJson(Map<String, dynamic> json) {
     return DirectionConfig(
-      delayMs: json['delayMs'] as int? ?? 0,
-      jitterMs: json['jitterMs'] as int? ?? 0,
+      delayMs: (json['delayMs'] as int? ?? 0).clamp(0, 3000),
+      jitterMs: (json['jitterMs'] as int? ?? 0).clamp(0, 1000),
       bandwidthKbps: json['bandwidthKbps'] as int? ?? 0,
-      lossPercent: (json['lossPercent'] as num?)?.toDouble() ?? 0.0,
-      continuousPass: json['continuousPass'] as int? ?? 0,
-      continuousDrop: json['continuousDrop'] as int? ?? 0,
+      lossPercent: ((json['lossPercent'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 100.0),
+      continuousPass: (json['continuousPass'] as int? ?? 0).clamp(0, 100),
+      continuousDrop: (json['continuousDrop'] as int? ?? 0).clamp(0, 100),
     );
   }
 
@@ -64,13 +64,12 @@ class DirectionConfig {
       (continuousPass > 0 && continuousDrop > 0);
 }
 
-/// Full simulation profile.
 class NetworkConfig {
   final String name;
   final String backend; // auto | vpn | shizuku | adb | root
   final DirectionConfig upload;
   final DirectionConfig download;
-  final String? interfaceName; // null = auto
+  final String? interfaceName;
 
   const NetworkConfig({
     this.name = 'Default',

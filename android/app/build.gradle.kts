@@ -24,12 +24,15 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
-        // Do NOT set ndk.abiFilters — conflicts with flutter --split-per-abi
+        // arm64-v8a only — do NOT combine with flutter --split-per-abi filters conflict
+        ndk {
+            abiFilters.clear()
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
         release {
-            // Must keep these in sync: shrinkResources requires minifyEnabled=true
             isMinifyEnabled = false
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("debug")
@@ -37,6 +40,12 @@ android {
         debug {
             isMinifyEnabled = false
             isShrinkResources = false
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }

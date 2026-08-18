@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/backend_status.dart';
+import '../models/network_config.dart';
 import '../services/network_controller.dart';
 import '../widgets/direction_card.dart';
 import '../widgets/stat_tile.dart';
@@ -112,6 +113,34 @@ class HomeScreen extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 12),
+          Text('预设', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final p in [
+                ('正常', 20, 0, 0, 0.0),
+                ('4G', 50, 10, 5120, 1.0),
+                ('3G', 150, 50, 384, 3.0),
+                ('高延迟', 500, 100, 0, 5.0),
+                ('极差', 1000, 300, 128, 10.0),
+              ])
+                ActionChip(
+                  label: Text(p.$1),
+                  onPressed: () {
+                    final d = DirectionConfig(
+                      delayMs: p.$2,
+                      jitterMs: p.$3,
+                      bandwidthKbps: p.$4,
+                      lossPercent: p.$5,
+                    );
+                    ctrl.updateConfig(ctrl.config.copyWith(upload: d, download: d));
+                  },
+                ),
+            ],
           ),
           const SizedBox(height: 16),
 
