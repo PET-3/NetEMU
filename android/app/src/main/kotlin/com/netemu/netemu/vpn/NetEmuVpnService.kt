@@ -11,15 +11,11 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.netemu.netemu.MainActivity
-import com.netemu.netemu.R
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.nio.ByteBuffer
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -185,7 +181,7 @@ class NetEmuVpnService : VpnService() {
             vpnInterface?.close()
         } catch (_: Exception) {}
         vpnInterface = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopForeground(STOP_FOREGROUND_REMOVE) // API 24+
         stopSelf()
         Log.i(TAG, "VPN stopped")
     }
