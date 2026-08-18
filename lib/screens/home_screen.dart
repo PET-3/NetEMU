@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/backend_status.dart';
 import '../services/network_controller.dart';
 import '../widgets/direction_card.dart';
 import '../widgets/protocol_and_float_section.dart';
@@ -13,6 +12,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctrl = context.watch<NetworkController>();
     final theme = Theme.of(context);
+    final readOnly = ctrl.isProfileSelected;
 
     return Scaffold(
       appBar: AppBar(
@@ -28,7 +28,6 @@ class HomeScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Status card
           Card(
             elevation: 0,
             color: theme.colorScheme.surfaceContainerHighest,
@@ -77,6 +76,48 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  // 配置选中状态
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: readOnly
+                          ? theme.colorScheme.secondaryContainer
+                          : theme.colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          readOnly ? Icons.lock_outline : Icons.tune,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            readOnly
+                                ? '已选配置「${ctrl.selectedProfileName}」· 主页只读，按配置运行'
+                                : '自由调节模式 · 可直接改参数',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                        if (readOnly)
+                          TextButton(
+                            onPressed: () async {
+                              await ctrl.clearProfileSelection();
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('已进入自由调节模式')),
+                                );
+                              }
+                            },
+                            child: const Text('自由调节'),
+                          ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -119,33 +160,37 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Protocol filter + floating windows
-          const ProtocolAndFloatSection(),
-          const SizedBox(height: 12),
+          // 自由调节时才显示协议/悬浮窗开关编辑；只读时也显示当前协议
+          if (!readOnly) const ProtocolAndFloatSection(),
+          if (!readOnly) const SizedBox(height: 12),
 
-          // Upload / Download params
           DirectionCard(
             title: '上行 (Upload)',
             config: ctrl.config.upload,
-            onChanged: (c) =>
-                ctrl.updateConfig(ctrl.config.copyWith(upload: c)),
+            readOnly: readOnly,
+            onChanged: readOnly
+                ? null
+                : (c) => ctrl.updateConfig(ctrl.config.copyWith(upload: c)),
           ),
           const SizedBox(height: 12),
           DirectionCard(
             title: '下行 (Download)',
             config: ctrl.config.download,
-            onChanged: (c) =>
-                ctrl.updateConfig(ctrl.config.copyWith(download: c)),
+            readOnly: readOnly,
+            onChanged: readOnly
+                ? null
+                : (c) =>
+                    ctrl.updateConfig(ctrl.config.copyWith(download: c)),
           ),
           const SizedBox(height: 12),
 
-          // Live stats
           Card(
             elevation: 0,
             color: theme.colorScheme.surfaceContainerHighest,
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
@@ -191,6 +236,14 @@ class HomeScreen extends StatelessWidget {
                     '  ·  VPN: ${ctrl.stats.vpnActive ? "是" : "否"}'
                     '  ·  协议: ${ctrl.stats.protocolFilter}',
                     style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '说明：此处速度为「模拟路径」统计（经 VPN/Emulator 的流量），'
+                    '与系统状态栏/手机管家全网测速口径不同，数值不一致是正常现象。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
                   ),
                 ],
               ),

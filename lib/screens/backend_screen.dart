@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/backend_status.dart';
 import '../services/network_controller.dart';
@@ -36,6 +37,23 @@ class BackendScreen extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          Card(
+            elevation: 0,
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                '说明：\n'
+                '· VPN：无 Root，推荐日常使用。\n'
+                '· Root：直接 tc，效果最接近系统级。\n'
+                '· Shizuku：当前版本未集成官方 API，因此不会出现在 Shizuku「授权应用」列表；'
+                '在未接入库之前请用 Root / VPN / ADB 导出。\n'
+                '· ADB：应用内不执行命令，请导出后在电脑运行。',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           Text('可用后端', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -65,24 +83,52 @@ class BackendScreen extends StatelessWidget {
                     : null,
                 onTap: () {
                   ctrl.setBackend(c.type);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('已选择 ${c.type.label}')),
+                  );
                 },
               ),
             );
           }),
           const SizedBox(height: 16),
-          FilledButton.tonal(
-            onPressed: () => ctrl.refreshBackends(),
-            child: const Text('重新检测'),
+          FilledButton.tonalIcon(
+            onPressed: () => _exportAdb(context, ctrl),
+            icon: const Icon(Icons.terminal),
+            label: const Text('导出 ADB 命令（在电脑执行）'),
           ),
-          const SizedBox(height: 24),
-          Text('说明', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          const Text(
-            '• Root：最高权限，直接使用 tc/netem\n'
-            '• Shizuku：无需 Root，通过 Shizuku 获取 shell 权限执行 tc\n'
-            '• ADB Shell：开发者无线调试，适合调试场景；App 内直接执行受限时会导出命令\n'
-            '• VPNService：无 Root 默认方案，通过 TUN 在用户态模拟延迟/丢包/限速\n\n'
-            '优先级：Root > Shizuku > ADB > VPN',
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportAdb(
+      BuildContext context, NetworkController ctrl) async {
+    final cmds = await ctrl.bridge.exportAdbCommands();
+    if (!context.mounted) return;
+    final text = cmds.isEmpty
+        ? '# 当前无延迟/丢包/限速参数，无需下发 tc'
+        : cmds.join('\n');
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ADB 命令'),
+        content: SingleChildScrollView(
+          child: SelectableText(text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: text));
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已复制')),
+              );
+            },
+            child: const Text('复制'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
           ),
         ],
       ),
@@ -96,11 +142,11 @@ class BackendScreen extends StatelessWidget {
       case BackendType.shizuku:
         return Icons.extension;
       case BackendType.adb:
-        return Icons.terminal;
+        return Icons.computer;
       case BackendType.vpn:
-        return Icons.vpn_lock;
+        return Icons.vpn_key;
       case BackendType.auto:
-        return Icons.auto_awesome;
+        return Icons.auto_mode;
     }
   }
 }

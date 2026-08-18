@@ -45,7 +45,7 @@ class ConfigService {
   Future<NetworkConfig?> getActiveProfile() async {
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString(_keyActive);
-    if (name == null) return null;
+    if (name == null || name.isEmpty) return null;
     final list = await loadProfiles();
     try {
       return list.firstWhere((p) => p.name == name);

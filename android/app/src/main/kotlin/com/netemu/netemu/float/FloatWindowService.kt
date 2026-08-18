@@ -239,7 +239,8 @@ class FloatWindowService : Service() {
         val down = EmulatorStats.download
         val upSpeed = formatSpeed(up.currentSpeedBps)
         val downSpeed = formatSpeed(down.currentSpeedBps)
-        return "↑$upSpeed ↓$downSpeed | 丢包 ${up.randomLoss.get() + down.randomLoss.get()} / 连续 ${up.continuousLoss.get() + down.continuousLoss.get()}"
+        // 模拟路径流量，与系统全网测速口径不同
+        return "模拟↑$upSpeed ↓$downSpeed | 丢${up.randomLoss.get() + down.randomLoss.get()}/连${up.continuousLoss.get() + down.continuousLoss.get()}"
     }
 
     private fun formatSpeed(bps: Double): String {

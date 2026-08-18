@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/backend_status.dart';
 import '../models/network_config.dart';
@@ -19,6 +20,9 @@ class NetworkController extends ChangeNotifier {
   bool _running = false;
   String _recommendedReason = '';
 
+  /// 非 null 表示已选中某个配置：主页只读展示，按该配置运行
+  String? _selectedProfileName;
+
   NetworkConfig get config => _config;
   BackendStatus get status => _status;
   SimulationStatistics get stats => _stats;
@@ -29,6 +33,12 @@ class NetworkController extends ChangeNotifier {
   bool get running => _running;
   String get recommendedReason => _recommendedReason;
   BackendType get activeBackend => _status.active;
+
+  /// 是否处于「已选配置」只读模式
+  bool get isProfileSelected =>
+      _selectedProfileName != null && _selectedProfileName!.isNotEmpty;
+
+  String? get selectedProfileName => _selectedProfileName;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -50,8 +60,10 @@ class NetworkController extends ChangeNotifier {
     final active = await configService.getActiveProfile();
     if (active != null) {
       _config = active;
-    } else if (_profiles.isNotEmpty) {
-      _config = _profiles.first;
+      _selectedProfileName = active.name;
+    } else {
+      _config = const NetworkConfig(name: '自由调节');
+      _selectedProfileName = null;
     }
 
     _interfaces = await bridge.getInterfaces();
@@ -68,26 +80,31 @@ class NetworkController extends ChangeNotifier {
       type: BackendType.root,
       available: rootAvail,
       authorized: rootAvail,
-      message: rootAvail ? 'su available' : 'no root',
+      message: rootAvail ? 'su 可用，可直接下发 tc' : '无 Root',
       priority: 100,
     ));
 
     final shizuku = Map<String, dynamic>.from(data['shizuku'] as Map? ?? {});
+    final installed = shizuku['installed'] == true;
     final shizukuOk = shizuku['authorized'] == true;
     caps.add(BackendCapability(
       type: BackendType.shizuku,
-      available: shizuku['installed'] == true,
+      available: installed,
       authorized: shizukuOk,
-      message: shizuku['message'] as String? ?? '',
+      message: installed
+          ? (shizukuOk
+              ? '已授权'
+              : '已安装但未完成 API 授权。当前版本未集成 Shizuku 官方库，应用不会出现在 Shizuku 授权列表中；请优先使用 Root 或 VPN，或导出 ADB 命令。')
+          : '未安装 Shizuku',
       priority: 80,
     ));
 
-    final adbOk = data['adb'] == true;
-    caps.add(BackendCapability(
+    // ADB：应用内无法直接执行，始终提供「导出命令」
+    caps.add(const BackendCapability(
       type: BackendType.adb,
-      available: adbOk,
-      authorized: adbOk,
-      message: adbOk ? 'adb shell reachable' : 'adb not available in-app',
+      available: true,
+      authorized: true,
+      message: '应用内不直接执行 adb。请在「后端」页导出命令，到电脑上执行。',
       priority: 40,
     ));
 
@@ -95,7 +112,7 @@ class NetworkController extends ChangeNotifier {
       type: BackendType.vpn,
       available: true,
       authorized: true,
-      message: 'VpnService always available',
+      message: '无 Root 可用，用户态模拟（推荐）',
       priority: 20,
     ));
 
@@ -120,6 +137,20 @@ class NetworkController extends ChangeNotifier {
   }
 
   void updateConfig(NetworkConfig config) {
+    // 已选配置模式下主页不可改；配置页编辑会先 clear 或走 saveProfile
+    if (isProfileSelected) {
+      _addLog('当前为配置只读模式，请到「配置」页修改或点击「自由调节」');
+      return;
+    }
+    _config = config;
+    notifyListeners();
+    if (_running) {
+      bridge.updateConfig(config);
+    }
+  }
+
+  /// 配置页强制更新（编辑/新建时）
+  void forceUpdateConfig(NetworkConfig config) {
     _config = config;
     notifyListeners();
     if (_running) {
@@ -176,11 +207,14 @@ class NetworkController extends ChangeNotifier {
     await configService.saveProfile(_config);
     _profiles = await configService.loadProfiles();
     await configService.setActiveProfile(_config.name);
+    _selectedProfileName = _config.name;
     notifyListeners();
   }
 
+  /// 选中配置：主页只读 + 按该配置运行
   Future<void> loadProfile(NetworkConfig profile) async {
     _config = profile;
+    _selectedProfileName = profile.name;
     await configService.setActiveProfile(profile.name);
     if (_running) {
       await bridge.updateConfig(profile);
@@ -188,10 +222,59 @@ class NetworkController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 取消选中 → 主页可自由调节参数
+  Future<void> clearProfileSelection() async {
+    _selectedProfileName = null;
+    await configService.setActiveProfile('');
+    notifyListeners();
+  }
+
   Future<void> deleteProfile(String name) async {
     await configService.deleteProfile(name);
     _profiles = await configService.loadProfiles();
+    if (_selectedProfileName == name) {
+      _selectedProfileName = null;
+    }
     notifyListeners();
+  }
+
+  /// 导出全部配置为 JSON 字符串（备份）
+  Future<String> exportBackupJson() async {
+    final list = await configService.loadProfiles();
+    return const JsonEncoder.withIndent('  ').convert({
+      'version': 1,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'profiles': list.map((e) => e.toJson()).toList(),
+    });
+  }
+
+  /// 从 JSON 恢复配置（覆盖或合并）
+  Future<int> importBackupJson(String raw, {bool merge = true}) async {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) throw FormatException('无效备份格式');
+    final list = decoded['profiles'];
+    if (list is! List) throw FormatException('缺少 profiles');
+    final imported = <NetworkConfig>[];
+    for (final item in list) {
+      if (item is Map) {
+        imported.add(
+            NetworkConfig.fromJson(Map<String, dynamic>.from(item)));
+      }
+    }
+    if (imported.isEmpty) throw FormatException('备份中没有配置');
+    if (merge) {
+      final existing = await configService.loadProfiles();
+      final byName = {for (final p in existing) p.name: p};
+      for (final p in imported) {
+        byName[p.name] = p;
+      }
+      await configService.saveProfiles(byName.values.toList());
+    } else {
+      await configService.saveProfiles(imported);
+    }
+    _profiles = await configService.loadProfiles();
+    notifyListeners();
+    return imported.length;
   }
 
   void _addLog(String msg) {
