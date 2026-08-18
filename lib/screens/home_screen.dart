@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/backend_status.dart';
-import '../models/network_config.dart';
 import '../services/network_controller.dart';
 import '../widgets/direction_card.dart';
 import '../widgets/protocol_and_float_section.dart';
