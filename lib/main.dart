@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/network_controller.dart';
+import 'services/app_prefs.dart';
+import 'theme/app_theme.dart';
+import 'l10n/app_strings.dart';
 import 'screens/home_screen.dart';
 import 'screens/test_screen.dart';
 import 'screens/profiles_screen.dart';
@@ -11,30 +14,71 @@ void main() {
   runApp(const NetEmuApp());
 }
 
-class NetEmuApp extends StatelessWidget {
+class NetEmuApp extends StatefulWidget {
   const NetEmuApp({super.key});
 
   @override
+  State<NetEmuApp> createState() => _NetEmuAppState();
+}
+
+class _NetEmuAppState extends State<NetEmuApp> {
+  bool _en = false;
+  UiStyle _ui = UiStyle.materialYou;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final en = await AppPrefs.isEnglish();
+    final ui = await AppPrefs.uiStyle();
+    if (mounted) {
+      setState(() {
+        _en = en;
+        _ui = ui;
+        _ready = true;
+      });
+    }
+  }
+
+  void updateLocale(bool en) async {
+    await AppPrefs.setEnglish(en);
+    setState(() => _en = en);
+  }
+
+  void updateUiStyle(UiStyle style) async {
+    await AppPrefs.setUiStyle(style);
+    setState(() => _ui = style);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => NetworkController()..initialize(),
+    if (!_ready) {
+      return const MaterialApp(
+        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
+    }
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => NetworkController()..initialize()),
+        Provider<S>.value(value: S.of(_en)),
+        Provider<AppShellAccess>.value(
+          value: AppShellAccess(
+            setEnglish: updateLocale,
+            setUiStyle: updateUiStyle,
+            isEnglish: _en,
+            uiStyle: _ui,
+          ),
+        ),
+      ],
       child: MaterialApp(
         title: 'NetEmu',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF1565C0),
-            brightness: Brightness.light,
-          ),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF90CAF9),
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-        ),
+        theme: AppTheme.light(_ui),
+        darkTheme: AppTheme.dark(_ui),
         themeMode: ThemeMode.system,
         home: const MainShell(),
       ),
@@ -69,8 +113,8 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<NetworkController>();
-    // 测试页：仅在「测试模式」或未选配置时显示入口；选中配置后底部不显示测试
-    final showTest = ctrl.isTestMode; // 仅首页选择「测试」后显示测试页
+    final s = context.watch<S>();
+    final showTest = ctrl.isTestMode;
 
     final pages = <Widget>[
       const HomeScreen(),
@@ -79,46 +123,41 @@ class _MainShellState extends State<MainShell> {
       const SettingsScreen(),
     ];
 
-    // 映射：首页 0；若有测试则 1 为测试，否则 1 为配置…
     final destinations = <NavigationDestination>[
-      const NavigationDestination(
-        icon: Icon(Icons.home_outlined),
-        selectedIcon: Icon(Icons.home),
-        label: '首页',
+      NavigationDestination(
+        icon: const Icon(Icons.home_outlined),
+        selectedIcon: const Icon(Icons.home),
+        label: s.home,
       ),
       if (showTest)
-        const NavigationDestination(
-          icon: Icon(Icons.science_outlined),
-          selectedIcon: Icon(Icons.science),
-          label: '测试',
+        NavigationDestination(
+          icon: const Icon(Icons.science_outlined),
+          selectedIcon: const Icon(Icons.science),
+          label: s.test,
         ),
-      const NavigationDestination(
-        icon: Icon(Icons.folder_outlined),
-        selectedIcon: Icon(Icons.folder),
-        label: '配置',
+      NavigationDestination(
+        icon: const Icon(Icons.folder_outlined),
+        selectedIcon: const Icon(Icons.folder),
+        label: s.profiles,
       ),
-      const NavigationDestination(
-        icon: Icon(Icons.settings_outlined),
-        selectedIcon: Icon(Icons.settings),
-        label: '设置',
+      NavigationDestination(
+        icon: const Icon(Icons.settings_outlined),
+        selectedIcon: const Icon(Icons.settings),
+        label: s.settings,
       ),
     ];
 
-    // 修正 index 越界（从显示测试切到不显示时）
-    if (_index >= pages.length) {
-      _index = 0;
-    }
-    // 若当前在测试页但测试被隐藏，回到首页
-    if (!showTest && _index == 1 && pages.length == 3) {
-      // 当 showTest 为 false 时 pages = [home, profiles, settings]
-      // 若之前 index 指向旧的测试，需钳制
-    }
     final safeIndex = _index.clamp(0, pages.length - 1);
 
     return Scaffold(
-      body: IndexedStack(
-        index: safeIndex,
-        children: pages,
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 280),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        child: KeyedSubtree(
+          key: ValueKey('${showTest}_$safeIndex'),
+          child: pages[safeIndex],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
@@ -126,5 +165,28 @@ class _MainShellState extends State<MainShell> {
         destinations: destinations,
       ),
     );
+  }
+}
+
+
+/// 设置页访问语言/主题切换
+class AppShellAccess {
+  final void Function(bool en) setEnglish;
+  final void Function(UiStyle style) setUiStyle;
+  final bool isEnglish;
+  final UiStyle uiStyle;
+  AppShellAccess({
+    required this.setEnglish,
+    required this.setUiStyle,
+    required this.isEnglish,
+    required this.uiStyle,
+  });
+
+  static AppShellAccess? of(BuildContext context) {
+    try {
+      return Provider.of<AppShellAccess>(context, listen: true);
+    } catch (_) {
+      return null;
+    }
   }
 }

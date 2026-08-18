@@ -28,6 +28,7 @@ class NetEmuVpnService : VpnService() {
         const val ACTION_START = "com.netemu.netemu.START"
         const val ACTION_STOP = "com.netemu.netemu.STOP"
         const val ACTION_UPDATE = "com.netemu.netemu.UPDATE"
+        const val ACTION_TOGGLE = "com.netemu.netemu.TOGGLE"
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "netemu_vpn"
         @Volatile var notificationEnabled: Boolean = true
@@ -55,6 +56,9 @@ class NetEmuVpnService : VpnService() {
             ACTION_START -> startVpn()
             ACTION_STOP -> stopVpn()
             ACTION_UPDATE -> { /* config applied via EmulatorConfig directly */ }
+            ACTION_TOGGLE -> {
+                if (running.get()) stopVpn() else startVpn()
+            }
         }
         return START_STICKY
     }
@@ -166,6 +170,16 @@ class NetEmuVpnService : VpnService() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
+            .addAction(
+                if (running.get()) android.R.drawable.ic_media_pause
+                else android.R.drawable.ic_media_play,
+                if (running.get()) "暂停" else "开始",
+                PendingIntent.getService(
+                    this, 2,
+                    Intent(this, NetEmuVpnService::class.java).setAction(ACTION_TOGGLE),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
             .build()
     }
 

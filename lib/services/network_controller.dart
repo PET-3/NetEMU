@@ -5,6 +5,7 @@ import '../models/backend_status.dart';
 import '../models/network_config.dart';
 import 'native_bridge.dart';
 import 'config_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 运行来源：已选配置 / 测试页
 enum RunSource { none, profile, test }
@@ -87,6 +88,7 @@ class NetworkController extends ChangeNotifier {
     _interfaces = await bridge.getInterfaces();
     _initialized = true;
     notifyListeners();
+    _syncFloatPrefs();
   }
 
   Future<void> _detect() async {
@@ -160,6 +162,7 @@ class NetworkController extends ChangeNotifier {
     _selectedProfileName = null;
     _testConfig = _testConfig.copyWith(backend: _lockedBackend.id);
     notifyListeners();
+    _syncFloatPrefs();
   }
 
   Future<void> selectProfile(NetworkConfig profile) async {
@@ -319,6 +322,20 @@ class NetworkController extends ChangeNotifier {
       _testConfig = config.copyWith(backend: _lockedBackend.id);
       notifyListeners();
     }
+  }
+
+
+  Future<void> _syncFloatPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final source = _runSource == RunSource.test
+          ? 'test'
+          : (_runSource == RunSource.profile ? 'profile' : '');
+      await prefs.setString('netemu_float_run_source', source);
+      await prefs.setString('netemu_float_profile', _selectedProfileName ?? '');
+      final names = _profiles.map((e) => e.name).toList();
+      await prefs.setString('netemu_profile_names', names.join(','));
+    } catch (_) {}
   }
 
   void clearLogs() {
