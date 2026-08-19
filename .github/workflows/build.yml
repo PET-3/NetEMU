@@ -17,8 +17,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # 固定版本，避免 floating stable 突然抬高 Gradle/AGP 要求导致反复失败
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.32.8"
           channel: stable
           cache: true
 
