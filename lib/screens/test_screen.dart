@@ -17,6 +17,7 @@ class TestScreen extends StatefulWidget {
 
 class _TestScreenState extends State<TestScreen> {
   bool _dirty = false;
+  NetworkConfig? _snapshot;
 
   @override
   void initState() {
@@ -26,7 +27,15 @@ class _TestScreenState extends State<TestScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctrl = context.read<NetworkController>();
       ctrl.prepareAdjustEditor();
-      if (mounted) setState(() => _dirty = false);
+      final snap = ctrl.runSource == RunSource.profile
+          ? ctrl.profileConfig
+          : ctrl.testConfig;
+      if (mounted) {
+        setState(() {
+          _snapshot = snap;
+          _dirty = false;
+        });
+      }
     });
   }
 
@@ -62,6 +71,19 @@ class _TestScreenState extends State<TestScreen> {
           title: Text(title),
           actions: [
             InfoIcon(title: '调节', message: ParamInfos.testMode),
+            TextButton(
+              onPressed: _snapshot == null || !_dirty
+                  ? null
+                  : () {
+                      final snap = _snapshot!;
+                      ctrl.updateTestConfig(snap);
+                      setState(() => _dirty = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已恢复修改前参数')),
+                      );
+                    },
+              child: const Text('恢复'),
+            ),
             TextButton(
               onPressed: () => _saveFlow(context, ctrl),
               child: const Text('保存'),

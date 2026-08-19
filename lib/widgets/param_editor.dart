@@ -13,7 +13,6 @@ class ParamEditor extends StatefulWidget {
   final bool isInt;
   final String? info;
   final ValueChanged<double>? onChanged;
-  /// Step for +/- buttons (default 1 for int, 0.1 for double).
   final double? step;
 
   const ParamEditor({
@@ -39,8 +38,7 @@ class _ParamEditorState extends State<ParamEditor> {
   late TextEditingController _ctrl;
   late FocusNode _focus;
 
-  double get _step =>
-      widget.step ?? (widget.isInt ? 1.0 : 0.1);
+  double get _step => widget.step ?? (widget.isInt ? 1.0 : 0.1);
 
   @override
   void initState() {
@@ -109,6 +107,9 @@ class _ParamEditorState extends State<ParamEditor> {
         ),
       );
     }
+
+    final unit = widget.unit.trim();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -119,24 +120,52 @@ class _ParamEditorState extends State<ParamEditor> {
               InfoIcon(title: widget.label, message: widget.info!),
             const Spacer(),
             SizedBox(
-              width: 88,
-              child: TextField(
-                controller: _ctrl,
-                focusNode: _focus,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              width: 120,
+              height: 42,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: TextField(
+                      controller: _ctrl,
+                      focusNode: _focus,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                      textAlign: TextAlign.left,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: EdgeInsets.fromLTRB(
+                          10,
+                          10,
+                          unit.isEmpty ? 10 : 8,
+                          unit.isEmpty ? 10 : 16,
+                        ),
+                        border: const OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) => _commit(),
+                    ),
+                  ),
+                  if (unit.isNotEmpty)
+                    Positioned(
+                      right: 6,
+                      bottom: 4,
+                      child: IgnorePointer(
+                        child: Text(
+                          unit,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.outline,
+                            fontSize: 10,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
-                textAlign: TextAlign.end,
-                decoration: InputDecoration(
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  border: const OutlineInputBorder(),
-                  suffixText: widget.unit.isEmpty ? null : widget.unit,
-                ),
-                onSubmitted: (_) => _commit(),
               ),
             ),
           ],

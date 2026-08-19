@@ -33,11 +33,13 @@ class NetworkController extends ChangeNotifier {
   bool _showNotification = true;
   bool _hideFromRecents = false;
   bool _showCharts = false;
+  bool _disclaimerAccepted = false;
   bool _realNetworkAdaptive = false;
   /// Highlight this profile name briefly on profiles list after save.
   String? _flashProfileName;
   final List<double> _latencyHistory = [];
   final List<double> _lossHistory = [];
+  double _lastLossTotal = 0;
   static const _maxHistory = 60;
   static const _maxLogs = 500;
 
@@ -68,6 +70,7 @@ class NetworkController extends ChangeNotifier {
   bool get showNotification => _showNotification;
   bool get hideFromRecents => _hideFromRecents;
   bool get showCharts => _showCharts;
+  bool get disclaimerAccepted => _disclaimerAccepted;
   bool get realNetworkAdaptive => _realNetworkAdaptive;
   String? get flashProfileName => _flashProfileName;
   List<double> get latencyHistory => List.unmodifiable(_latencyHistory);
@@ -79,14 +82,28 @@ class NetworkController extends ChangeNotifier {
     bridge.statisticsStream.listen((s) {
       _stats = s;
       if (_running) {
-        final delaySample = (config.upload.delayMs + config.download.delayMs) /
-            2.0;
+        // 采样：基础延迟 + 抖动幅度内的随机扰动，曲线更有意义
+        final base =
+            (config.upload.delayMs + config.download.delayMs) / 2.0;
+        final jit =
+            (config.upload.jitterMs + config.download.jitterMs) / 2.0;
+        final noise = jit <= 0
+            ? (base * 0.02)
+            : jit;
+        final delaySample =
+            (base + (noise * (0.5 - (DateTime.now().millisecond % 100) / 100.0)) * 2)
+                .clamp(0.0, double.infinity);
         _latencyHistory.add(delaySample);
         if (_latencyHistory.length > _maxHistory) {
           _latencyHistory.removeAt(0);
         }
-        final loss = (s.randomLossCount + s.continuousLossCount).toDouble();
-        _lossHistory.add(loss);
+        // 丢包率：本秒相对增量（平滑曲线），而非累计值贴顶
+        final totalLoss =
+            (s.randomLossCount + s.continuousLossCount).toDouble();
+        final prev = _lossHistory.isEmpty ? totalLoss : (_lastLossTotal);
+        final delta = (totalLoss - prev).clamp(0.0, 1000.0);
+        _lastLossTotal = totalLoss;
+        _lossHistory.add(delta);
         if (_lossHistory.length > _maxHistory) {
           _lossHistory.removeAt(0);
         }
@@ -97,10 +114,8 @@ class NetworkController extends ChangeNotifier {
 
     await _detect();
     _profiles = await configService.loadProfiles();
-    if (_profiles.isEmpty) {
-      _profiles = List.from(ConfigService.presets);
-      await configService.saveProfiles(_profiles);
-    }
+    // 不再内置预设；空列表由用户通过自定义 / JSON / ZIP 添加
+
     final savedBackend = await configService.getLockedBackend();
     if (savedBackend != null) {
       _lockedBackend = savedBackend;
@@ -112,6 +127,11 @@ class NetworkController extends ChangeNotifier {
       _runSource = RunSource.profile;
     }
     _interfaces = await bridge.getInterfaces();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _disclaimerAccepted = prefs.getBool('netemu_disclaimer_ok') ?? false;
+      _showCharts = prefs.getBool('netemu_show_charts') ?? false;
+    } catch (_) {}
     _initialized = true;
     notifyListeners();
     _syncFloatPrefs();
@@ -313,6 +333,15 @@ class NetworkController extends ChangeNotifier {
   void setShowCharts(bool v) {
     _showCharts = v;
     notifyListeners();
+    SharedPreferences.getInstance()
+        .then((p) => p.setBool('netemu_show_charts', v));
+  }
+
+  Future<void> acceptDisclaimer() async {
+    _disclaimerAccepted = true;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('netemu_disclaimer_ok', true);
   }
 
   void setRealNetworkAdaptive(bool v) {

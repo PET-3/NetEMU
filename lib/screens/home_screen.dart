@@ -386,25 +386,63 @@ class _LinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty) return;
-    final maxV = points.reduce((a, b) => a > b ? a : b).clamp(1.0, double.infinity);
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    // 按数据 min/max 归一化，避免贴顶成直线
+    var minV = points.first;
+    var maxV = points.first;
+    for (final v in points) {
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+    final span = (maxV - minV).abs();
+    final lo = span < 1e-6 ? minV - 1 : minV;
+    final hi = span < 1e-6 ? maxV + 1 : maxV;
+    final range = (hi - lo).clamp(1e-6, double.infinity);
+
+    double yOf(double v) =>
+        size.height - ((v - lo) / range) * size.height * 0.88 - size.height * 0.06;
+
     final path = Path();
-    for (var i = 0; i < points.length; i++) {
-      final x = points.length == 1
-          ? size.width / 2
-          : i * size.width / (points.length - 1);
-      final y = size.height - (points[i] / maxV) * size.height * 0.9;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
+    if (points.length == 1) {
+      final y = yOf(points.first);
+      path.moveTo(0, y);
+      path.lineTo(size.width, y);
+    } else {
+      // Catmull-Rom 风格平滑折线
+      final xs = <double>[];
+      final ys = <double>[];
+      for (var i = 0; i < points.length; i++) {
+        xs.add(i * size.width / (points.length - 1));
+        ys.add(yOf(points[i]));
+      }
+      path.moveTo(xs[0], ys[0]);
+      for (var i = 0; i < points.length - 1; i++) {
+        final x0 = xs[i];
+        final y0 = ys[i];
+        final x1 = xs[i + 1];
+        final y1 = ys[i + 1];
+        final cx = (x0 + x1) / 2;
+        path.cubicTo(cx, y0, cx, y1, x1, y1);
       }
     }
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
     canvas.drawPath(path, paint);
+    // 轻微填充
+    final fill = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(
+      fill,
+      Paint()
+        ..color = color.withValues(alpha: 0.12)
+        ..style = PaintingStyle.fill,
+    );
   }
 
   @override

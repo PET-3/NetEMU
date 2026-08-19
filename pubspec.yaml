@@ -1,7 +1,7 @@
 name: netemu
 description: Professional Android network condition simulator (weak network testing tool).
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.8.1
@@ -16,6 +16,9 @@ dependencies:
   json_annotation: ^4.9.0
   intl: ^0.19.0
   flutter_riverpod: ^2.6.1
+  archive: ^4.0.2
+  file_picker: ^8.1.7
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

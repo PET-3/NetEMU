@@ -239,43 +239,6 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // —— 备份 ——
-          Text(s.backup, style: theme.textTheme.titleSmall),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _exportSingleJson(context, ctrl),
-                icon: const Icon(Icons.description_outlined, size: 18),
-                label: const Text('导出为单个 JSON'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _exportMultiJson(context, ctrl),
-                icon: const Icon(Icons.folder_zip_outlined, size: 18),
-                label: const Text('导出多文件清单'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _import(context, ctrl, merge: true),
-                icon: const Icon(Icons.merge_type, size: 18),
-                label: const Text('导入合并'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _import(context, ctrl, merge: false),
-                icon: const Icon(Icons.upload_file, size: 18),
-                label: const Text('导入覆盖'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '多文件清单可复制后自行打包为 zip；导入支持整包 JSON 或单配置 JSON。',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: cs.outline),
-          ),
-          const SizedBox(height: 24),
-
           Text(s.about, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           Card(

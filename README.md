@@ -1,96 +1,124 @@
 # NetEmu
 
-Android 弱网模拟工具（Flutter + 原生 VPN 用户态代理 / Root tc / Shizuku）。
+[![Flutter](https://img.shields.io/badge/Flutter-3.32+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-3.8+-0175C2?logo=dart&logoColor=white)](https://dart.dev)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Android-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?logo=android&logoColor=white)](https://www.android.com)
+[![License](https://img.shields.io/badge/License-See%20repo-lightgrey)](LICENSE)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](../../actions)
+
+**Android 弱网模拟与网络条件测试工具**
+
+在真机上对延迟、抖动、丢包、带宽进行可控模拟，支持 **无 Root（VPN 用户态代理）**、**Root（tc netem）**、**Shizuku** 与 **ADB 命令导出**，面向开发、测试与质量保障场景。
 
 项目地址：https://github.com/PET-3/NetEMU
 
-版本：**1.1.0**
+---
+
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 跨端 UI | Flutter 3.32+ / Dart 3.8+ / Material 3 / Provider |
+| Android 原生 | Kotlin / VpnService / Foreground Service |
+| 用户态网络 | TUN 读写 · TCP/UDP 代理 · ICMP Echo |
+| 内核弱网 | Linux `tc` · `netem` · HTB / TBF |
+| 特权通道 | Root (`su`) · [Shizuku](https://github.com/RikkaApps/Shizuku) API |
+| 工程 | Gradle 8 · GitHub Actions · arm64-v8a Release APK |
+| 辅助库 | shared_preferences · path_provider · archive · file_picker · share_plus |
+
+---
 
 ## 功能概览
 
-- **多后端自动选择**：Root (tc) > Shizuku > ADB 命令导出 > VPN（无 Root）
-- **统一 BackendManager**：检测、选择、启停、热更新、健康检查、模式切换
-- **VPN 用户态完整双向链路**：
-  - 应用 → TUN → TCP/UDP/ICMP 代理 → 网络出口
-  - 网络出口 → 代理 → TUN → 应用
-  - TCP 连接跟踪（SYN/SYN-ACK/ACK/FIN/RST）、UDP NAT、ICMP Echo（ping）
-  - 上传 / 下载独立延迟、丢包、限速
-- **弱网参数**：
-  - 固定延迟 + 抖动（均匀 / 近似正态分布）
-  - 随机丢包、连续丢包（包数模式 / 时间窗口模式）
-  - Token Bucket 限速（稳定平均速率，避免硬丢弃突刺）
-- **协议过滤**：全部 / TCP / UDP
-- **配置管理**：新建、修改、删除、JSON 导入导出
-- **预设**：正常 / 2G / 3G / 4G / 4G弱网 / 5G高延迟 / 地铁 / 电梯 / 丢包严重 / 间歇断网 / 限速512K / 仅UDP
-- **实时统计**：上下行速度与字节、丢包计数、TCP/UDP 会话数
-- **悬浮窗 / 常驻通知**：启停、速度摘要
-- **界面**：Material 3，支持系统深浅色
+- **多后端**：Root > Shizuku > VPN（自动或手动锁定）；ADB 仅导出命令
+- **VPN 双向链路**：应用 ↔ TUN ↔ TCP/UDP/ICMP 代理 ↔ 真实网络
+- **弱网参数**（上下行独立）：延迟、抖动、随机/连续丢包、Token Bucket 限速
+- **配置体系**：自定义 / JSON 导入 / ZIP 导入；多选分享与批量删除
+- **调节页**：热更新参数；保存（替换/另存）；**恢复修改前**
+- **统计**：速率、字节、丢包计数、TCP/UDP 会话；可选延迟/丢包曲线
+- **日志**：级别与时间戳；导出；自动保留最近 500 条
+- **首次启动免责声明**
+
+---
+
+## 截图与主流程（简述）
+
+1. 同意免责声明 → 首页选择 **临时** 或 **配置**
+2. 一键启动模拟 → 通知栏 / 可选浮窗查看状态
+3. **调节** Tab 修改参数并保存或恢复
+4. **配置** 页管理、分享、从 JSON/ZIP 导入
+
+---
 
 ## 后端说明
 
-| 后端 | 权限 | 能力 | 说明 |
-|------|------|------|------|
-| Root | su | tc netem + HTB/TBF | 真实内核队列，推荐有 Root 设备 |
-| Shizuku | 用户授权 | 同 Root（经 Shizuku API） | 需安装并启动 Shizuku，在设置页点「授权 Shizuku」 |
-| ADB | PC 侧 adb shell | 导出 tc 命令 | 普通应用无法直接执行 adb；复制命令到电脑执行 |
-| VPN | 系统 VPN 授权 | 用户态代理模拟 | 无需 Root，支持真实 TCP/UDP 应用与 ping |
+| 后端 | 权限 | 能力 |
+|------|------|------|
+| Root | `su` | 内核 `tc netem` + HTB/TBF，退出自动清 qdisc |
+| Shizuku | 用户授权 | 经 Shizuku 执行同等 shell（无需完整 Root） |
+| ADB | PC 侧 | 导出 `adb shell tc ...`，应用内不执行 adb |
+| VPN | 系统 VPN 授权 | 用户态代理，无需 Root，支持真实 TCP/UDP 与 ping |
 
-自动优先级：`Root > Shizuku > VPN`（ADB 不作为自动运行后端）。
+> Root/Shizuku 主要塑造 **egress**；无 ifb 时 ingress（下载）塑造能力有限。
 
-## 底部导航
-
-| 页 | 说明 |
-|----|------|
-| 首页 | 启停、选测试/配置、参数图、流量与丢包/会话统计、浮窗与通知开关 |
-| 测试 | 仅在首页选择「测试」后出现；可调参数并保存到配置 |
-| 配置 | 管理已有配置与预设 |
-| 设置 | 后端锁定、Shizuku 授权、ADB 导出、接口、日志、关于 |
+---
 
 ## 构建
 
 ```bash
 flutter pub get
-flutter analyze
+flutter analyze --no-fatal-infos
 flutter test
 flutter build apk --release --target-platform android-arm64
 ```
 
-GitHub Actions：push / PR / workflow_dispatch 自动构建 arm64-v8a APK。
+CI：`.github/workflows/build.yml`（push / PR / workflow_dispatch）。
 
-## 权限说明
+最低系统：**Android 8.0（API 26）**，当前打包 **arm64-v8a**。
 
-- **VPN**：系统授权弹窗
-- **悬浮窗**：显示在其他应用上层
-- **Shizuku**：设置页发起授权，需 Shizuku 应用已启动
-- **Root**：`su` 可用时自动优先
+---
 
 ## 架构要点
 
-### VPN
+```
+Flutter UI ──MethodChannel──▶ MainActivity / BackendManager
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+              RootBackend    ShizukuBackend    VpnBackend
+                    │               │               │
+                 tc netem        tc via          TUN +
+                                                 TcpProxy
+                                                 UdpProxy
+                                                 ICMP
+```
 
-1. `NetEmuVpnService` 建立 TUN，读包分发。
-2. `TcpProxy`：完成与客户端握手，`protect()` 后连接远端，双向中继。
-3. `UdpProxy`：会话映射 + 双向 DatagramSocket。
-4. ICMP：Echo Request 本地生成 Echo Reply。
-5. `NetworkEmulator`：独立方向实例，Token Bucket + 延迟抖动 + 丢包模型。
+- `NetworkEmulator`：每方向独立实例（丢包 / 延迟抖动 / Token Bucket）
+- 配置 JSON 可导入导出；ZIP 内多个 `.json` 批量导入
 
-### Backend
+---
 
-- `Backend` 接口 + `RootBackend` / `ShizukuBackend` / `AdbBackend` / `VpnBackend`
-- `BackendManager`：选择、启停、切换、健康检查、退出清理 qdisc
+## 权限与合规
 
-## 已知限制与后续方向
+- VPN、悬浮窗、通知：按系统弹窗授权
+- Shizuku：设置页发起授权
+- **仅用于合法、授权范围内的测试**；详见应用内免责声明
 
-- Root/Shizuku 路径主要塑造 egress；ingress（下载）在无 ifb 时受限。
-- 完整 TCP 选项/分片可进一步评估 lwIP / gVisor netstack。
-- 预留按应用限速、CLI/CI 自动化接口。
+**已知不可用能力**：无法向应用「伪装未开弱网」的同时仍实施弱网（VPN/tc 机制限制）。
+
+---
+
+## 版本
+
+当前：**1.1.0**
+
+---
 
 ## 关于
 
-- 项目：https://github.com/PET-3/NetEMU
-- 作者邮箱：yyx3307022@gmail.com
+- 仓库：https://github.com/PET-3/NetEMU
+- Email：yyx3307022@gmail.com
 - 微信：yyx307022
 
-## 许可
-
-以仓库内 LICENSE 为准。
+许可以仓库内 `LICENSE` 为准。
