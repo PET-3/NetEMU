@@ -52,11 +52,12 @@ class ProfileIo {
     final index = utf8.encode(encodeAll(list));
     archive.addFile(ArchiveFile('_index.json', index.length, index));
     final zipBytes = ZipEncoder().encode(archive);
+    if (zipBytes == null) throw StateError('ZIP encode failed');
     final dir = await getTemporaryDirectory();
     final file = File(
       '${dir.path}/netemu_profiles_${DateTime.now().millisecondsSinceEpoch}.zip',
     );
-    await file.writeAsBytes(zipBytes!, flush: true);
+    await file.writeAsBytes(zipBytes, flush: true);
     return file;
   }
 
