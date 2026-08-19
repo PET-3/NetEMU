@@ -6,7 +6,6 @@ import '../models/network_config.dart';
 
 /// Import / export helpers for profiles (JSON / multi-file / ZIP).
 class ProfileIo {
-  /// Parse one or many profiles from raw text (backup blob or single profile).
   static List<NetworkConfig> parseJsonText(String raw) {
     final decoded = jsonDecode(raw);
     final out = <NetworkConfig>[];
@@ -52,7 +51,6 @@ class ProfileIo {
     final index = utf8.encode(encodeAll(list));
     archive.addFile(ArchiveFile('_index.json', index.length, index));
     final zipBytes = ZipEncoder().encode(archive);
-    if (zipBytes == null) throw StateError('ZIP encode failed');
     final dir = await getTemporaryDirectory();
     final file = File(
       '${dir.path}/netemu_profiles_${DateTime.now().millisecondsSinceEpoch}.zip',
@@ -82,7 +80,6 @@ class ProfileIo {
         out.addAll(parseJsonText(text));
       } catch (_) {}
     }
-    // de-dupe by name (last wins)
     final map = <String, NetworkConfig>{};
     for (final p in out) {
       map[p.name] = p;
