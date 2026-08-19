@@ -17,7 +17,6 @@ class TestScreen extends StatefulWidget {
 
 class _TestScreenState extends State<TestScreen> {
   bool _dirty = false;
-  NetworkConfig? _baseline;
 
   @override
   void initState() {
@@ -27,8 +26,7 @@ class _TestScreenState extends State<TestScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctrl = context.read<NetworkController>();
       ctrl.prepareAdjustEditor();
-      _baseline = ctrl.testConfig;
-      setState(() => _dirty = false);
+      if (mounted) setState(() => _dirty = false);
     });
   }
 

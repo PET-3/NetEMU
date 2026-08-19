@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/backend_status.dart';
 import '../models/network_config.dart';
 import '../services/network_controller.dart';
 import '../widgets/direction_card.dart';
@@ -32,18 +33,17 @@ class _ProfilesScreenState extends State<ProfilesScreen>
       duration: const Duration(milliseconds: 400),
     );
     // Two blinks: forward-reverse twice
-    _flashCtrl!.forward().then((_) {
-      return _flashCtrl!.reverse();
-    }).then((_) {
-      return _flashCtrl!.forward();
-    }).then((_) {
-      return _flashCtrl!.reverse();
-    }).then((_) {
+    Future<void> run() async {
+      await _flashCtrl!.forward();
+      await _flashCtrl!.reverse();
+      await _flashCtrl!.forward();
+      await _flashCtrl!.reverse();
       if (mounted) {
         context.read<NetworkController>().clearFlashProfile();
         setState(() => _flashingName = null);
       }
-    });
+    }
+    run();
     setState(() {});
   }
 
