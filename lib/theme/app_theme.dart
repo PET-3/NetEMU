@@ -18,6 +18,16 @@ class AppTheme {
   }
 
   static ThemeData _build(ColorScheme cs) {
+    // Flutter 3.47+：不再依赖已移除的 CupertinoPageTransitionsBuilder
+    const transitions = PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: ZoomPageTransitionsBuilder(),
+        TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+        TargetPlatform.linux: ZoomPageTransitionsBuilder(),
+        TargetPlatform.macOS: ZoomPageTransitionsBuilder(),
+        TargetPlatform.windows: ZoomPageTransitionsBuilder(),
+      },
+    );
     return ThemeData(
       colorScheme: cs,
       useMaterial3: true,
@@ -32,15 +42,7 @@ class AppTheme {
         ),
       ),
       appBarTheme: const AppBarTheme(elevation: 0, scrolledUnderElevation: 1),
-      pageTransitionsTheme: PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: const ZoomPageTransitionsBuilder(),
-          TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
-          TargetPlatform.linux: const ZoomPageTransitionsBuilder(),
-          TargetPlatform.macOS: const CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: const ZoomPageTransitionsBuilder(),
-        },
-      ),
+      pageTransitionsTheme: transitions,
       splashFactory: InkSparkle.splashFactory,
     );
   }
