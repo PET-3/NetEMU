@@ -146,15 +146,15 @@ class ShizukuBackend(private val context: Context) : Backend {
     }
 
     /**
-     * Execute a shell command through Shizuku's newProcess API.
+     * Execute shell via Shizuku.
+     * Shizuku.newProcess is private in API 13.x public stubs — call via reflection.
      */
     fun execViaShizuku(commands: List<String>): ShellBackend.Result {
         if (commands.isEmpty()) return ShellBackend.Result(0, "", "")
         return try {
-            // Prefer applying via ShellBackend-style single command under Shizuku process
             val joined = commands.joinToString(" && ")
-            val process = Shizuku.newProcess(arrayOf("sh", "-c", joined), null, null)
-                ?: return ShellBackend.Result(-1, "", "Shizuku.newProcess returned null")
+            val process = newShizukuProcess(arrayOf("sh", "-c", joined))
+                ?: return ShellBackend.Result(-1, "", "Shizuku process is null (authorize Shizuku?)")
             val stdout = BufferedReader(InputStreamReader(process.inputStream)).readText()
             val stderr = BufferedReader(InputStreamReader(process.errorStream)).readText()
             val code = process.waitFor()
@@ -162,6 +162,23 @@ class ShizukuBackend(private val context: Context) : Backend {
         } catch (e: Exception) {
             Log.e(TAG, "execViaShizuku: ${e.message}")
             ShellBackend.Result(-1, "", e.message ?: "error")
+        }
+    }
+
+    /** Reflectively invoke Shizuku.newProcess (non-public in 13.x). */
+    private fun newShizukuProcess(cmd: Array<String>): Process? {
+        return try {
+            val m = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java,
+            )
+            m.isAccessible = true
+            m.invoke(null, cmd, null, null) as? Process
+        } catch (e: Exception) {
+            Log.e(TAG, "newShizukuProcess: ${e.message}")
+            null
         }
     }
 
