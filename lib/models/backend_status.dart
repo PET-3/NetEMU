@@ -107,6 +107,8 @@ class SimulationStatistics {
   final String interfaceName;
   final bool vpnActive;
   final String protocolFilter;
+  final int tcpSessions;
+  final int udpSessions;
 
   const SimulationStatistics({
     this.uploadBytes = 0,
@@ -121,6 +123,8 @@ class SimulationStatistics {
     this.interfaceName = '',
     this.vpnActive = false,
     this.protocolFilter = 'all',
+    this.tcpSessions = 0,
+    this.udpSessions = 0,
   });
 
   factory SimulationStatistics.fromJson(Map<String, dynamic> json) {
@@ -137,6 +141,8 @@ class SimulationStatistics {
       interfaceName: json['interfaceName'] as String? ?? '',
       vpnActive: json['vpnActive'] as bool? ?? false,
       protocolFilter: json['protocolFilter'] as String? ?? 'all',
+      tcpSessions: (json['tcpSessions'] as num?)?.toInt() ?? 0,
+      udpSessions: (json['udpSessions'] as num?)?.toInt() ?? 0,
     );
   }
 }

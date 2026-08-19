@@ -15,13 +15,99 @@ class SettingsScreen extends StatelessWidget {
     final ctrl = context.watch<NetworkController>();
     final s = context.watch<S>();
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: Text(s.settings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // —— Backend ——
+          // —— 浮窗 / 通知（从首页移入）——
+          Text('显示与通知', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: cs.surfaceContainerHighest,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('控制浮窗'),
+                  value: ctrl.showControlFloat,
+                  onChanged: (v) async {
+                    if (v) await ctrl.bridge.requestOverlayPermission();
+                    ctrl.setShowControlFloat(v);
+                  },
+                  secondary: InfoIcon(
+                      title: '控制浮窗', message: ParamInfos.floatControl),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('信息浮窗'),
+                  value: ctrl.showInfoFloat,
+                  onChanged: (v) async {
+                    if (v) await ctrl.bridge.requestOverlayPermission();
+                    ctrl.setShowInfoFloat(v);
+                  },
+                  secondary: InfoIcon(
+                      title: '信息浮窗', message: ParamInfos.floatInfo),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('常驻通知'),
+                  value: ctrl.showNotification,
+                  onChanged: ctrl.setShowNotification,
+                  secondary: InfoIcon(
+                      title: '常驻通知', message: ParamInfos.notification),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('最近任务中隐藏'),
+                  value: ctrl.hideFromRecents,
+                  onChanged: ctrl.setHideFromRecents,
+                  secondary: InfoIcon(
+                      title: '最近任务', message: ParamInfos.hideRecent),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // —— 图表 / 自适应 ——
+          Text('统计与自适应', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: cs.surfaceContainerHighest,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('延迟 / 丢包曲线图'),
+                  subtitle: const Text('首页显示简易采样曲线'),
+                  value: ctrl.showCharts,
+                  onChanged: ctrl.setShowCharts,
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('真实网络状态提示'),
+                  subtitle: const Text(
+                      '仅日志提示链路状态，不自动改弱网参数'),
+                  value: ctrl.realNetworkAdaptive,
+                  onChanged: ctrl.setRealNetworkAdaptive,
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('异常伪装（不可用）'),
+                  subtitle: const Text(
+                      '无法向应用同时谎报「正常网络」并实施弱网；VPN 会改变链路可见性'),
+                  value: false,
+                  onChanged: null,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
 
           // —— Backend ——
           TitledRow(
@@ -59,6 +145,26 @@ class SettingsScreen extends StatelessWidget {
             icon: const Icon(Icons.terminal),
             label: const Text('导出 ADB 命令'),
           ),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: () async {
+              final ok = await ctrl.bridge.requestShizukuPermission();
+              await ctrl.refreshBackends();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      ok
+                          ? '已发起 Shizuku 授权请求，请在弹窗中确认'
+                          : '无法请求 Shizuku 授权（请先安装并启动 Shizuku）',
+                    ),
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.verified_user),
+            label: const Text('授权 Shizuku'),
+          ),
           const SizedBox(height: 24),
 
           Text(s.interfaces, style: theme.textTheme.titleSmall),
@@ -75,21 +181,42 @@ class SettingsScreen extends StatelessWidget {
                 ),
               )),
           TextButton(
-              onPressed: ctrl.refreshBackends,
-              child: const Text('刷新')),
+              onPressed: ctrl.refreshBackends, child: const Text('刷新')),
           const SizedBox(height: 24),
 
+          // —— 日志 ——
           TitledRow(
             title: s.logs,
-            trailing: TextButton(
-              onPressed: () {
-                ctrl.clearLogs();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(s.clear)),
-                );
-              },
-              child: Text(s.clear),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    final text = ctrl.exportLogsText();
+                    Clipboard.setData(ClipboardData(text: text));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('日志已复制到剪贴板')),
+                    );
+                  },
+                  child: const Text('导出'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    ctrl.clearLogs();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(s.clear)),
+                    );
+                  },
+                  child: Text(s.clear),
+                ),
+              ],
             ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '自动保留最近 500 条，含时间戳与级别',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: cs.outline),
           ),
           const SizedBox(height: 8),
           Card(
@@ -112,28 +239,43 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
+          // —— 备份 ——
           Text(s.backup, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => _export(context, ctrl, s),
-                  child: Text(s.export),
-                ),
+              OutlinedButton.icon(
+                onPressed: () => _exportSingleJson(context, ctrl),
+                icon: const Icon(Icons.description_outlined, size: 18),
+                label: const Text('导出为单个 JSON'),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => _import(context, ctrl, s),
-                  child: Text(s.import_),
-                ),
+              OutlinedButton.icon(
+                onPressed: () => _exportMultiJson(context, ctrl),
+                icon: const Icon(Icons.folder_zip_outlined, size: 18),
+                label: const Text('导出多文件清单'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _import(context, ctrl, merge: true),
+                icon: const Icon(Icons.merge_type, size: 18),
+                label: const Text('导入合并'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _import(context, ctrl, merge: false),
+                icon: const Icon(Icons.upload_file, size: 18),
+                label: const Text('导入覆盖'),
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Text(
+            '多文件清单可复制后自行打包为 zip；导入支持整包 JSON 或单配置 JSON。',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: cs.outline),
+          ),
           const SizedBox(height: 24),
 
-          // —— About ——
           Text(s.about, style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           Card(
@@ -157,6 +299,8 @@ class SettingsScreen extends StatelessWidget {
                   Text(s.contact),
                   const SelectableText('Email: yyx3307022@gmail.com'),
                   const SelectableText('WeChat: yyx307022'),
+                  const SizedBox(height: 8),
+                  const Text('版本 1.1.0'),
                 ],
               ),
             ),
@@ -176,31 +320,31 @@ class SettingsScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('ADB'),
-        content: SelectableText(text),
+        content: SingleChildScrollView(child: SelectableText(text)),
         actions: [
           TextButton(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: text));
               Navigator.pop(ctx);
             },
-            child: const Text('Copy'),
+            child: const Text('复制'),
           ),
           FilledButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK')),
+              child: const Text('确定')),
         ],
       ),
     );
   }
 
-  Future<void> _export(
-      BuildContext context, NetworkController ctrl, S s) async {
+  Future<void> _exportSingleJson(
+      BuildContext context, NetworkController ctrl) async {
     final json = await ctrl.exportBackupJson();
     if (!context.mounted) return;
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(s.export),
+        title: const Text('导出 · 单个 JSON'),
         content: SingleChildScrollView(child: SelectableText(json)),
         actions: [
           TextButton(
@@ -208,44 +352,82 @@ class SettingsScreen extends StatelessWidget {
               Clipboard.setData(ClipboardData(text: json));
               Navigator.pop(ctx);
             },
-            child: const Text('Copy'),
+            child: const Text('复制'),
           ),
           FilledButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK')),
+              child: const Text('确定')),
         ],
       ),
     );
   }
 
-  Future<void> _import(
-      BuildContext context, NetworkController ctrl, S s) async {
+  Future<void> _exportMultiJson(
+      BuildContext context, NetworkController ctrl) async {
+    final files = await ctrl.exportProfilesAsFiles();
+    final buf = StringBuffer();
+    buf.writeln('# NetEmu multi-file export — 可分别保存后打 zip');
+    for (final e in files.entries) {
+      buf.writeln();
+      buf.writeln('===== FILE: ${e.key} =====');
+      buf.writeln(e.value);
+    }
+    final text = buf.toString();
+    if (!context.mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('导出 · 多文件清单'),
+        content: SingleChildScrollView(child: SelectableText(text)),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: text));
+              Navigator.pop(ctx);
+            },
+            child: const Text('复制全部'),
+          ),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('确定')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _import(BuildContext context, NetworkController ctrl,
+      {required bool merge}) async {
     final c = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(s.import_),
+        title: Text(merge ? '导入合并' : '导入覆盖'),
         content: TextField(
           controller: c,
-          maxLines: 10,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+          maxLines: 12,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: '粘贴 JSON（整包或单配置）',
+          ),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: const Text('取消')),
           FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text(s.import_)),
+              child: const Text('导入')),
         ],
       ),
     );
     if (ok == true && c.text.trim().isNotEmpty) {
       try {
-        final n = await ctrl.importBackupJson(c.text.trim());
+        final n =
+            await ctrl.importBackupJson(c.text.trim(), merge: merge);
         if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('OK: $n')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已导入 $n 个配置')),
+          );
         }
       } catch (e) {
         if (context.mounted) {

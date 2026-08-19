@@ -32,6 +32,14 @@ class NetworkController extends ChangeNotifier {
   bool _showInfoFloat = false;
   bool _showNotification = true;
   bool _hideFromRecents = false;
+  bool _showCharts = false;
+  bool _realNetworkAdaptive = false;
+  /// Highlight this profile name briefly on profiles list after save.
+  String? _flashProfileName;
+  final List<double> _latencyHistory = [];
+  final List<double> _lossHistory = [];
+  static const _maxHistory = 60;
+  static const _maxLogs = 500;
 
   /// 全局锁定后端（不再 auto 切换）
   BackendType _lockedBackend = BackendType.vpn;
@@ -59,12 +67,30 @@ class NetworkController extends ChangeNotifier {
   bool get showInfoFloat => _showInfoFloat;
   bool get showNotification => _showNotification;
   bool get hideFromRecents => _hideFromRecents;
+  bool get showCharts => _showCharts;
+  bool get realNetworkAdaptive => _realNetworkAdaptive;
+  String? get flashProfileName => _flashProfileName;
+  List<double> get latencyHistory => List.unmodifiable(_latencyHistory);
+  List<double> get lossHistory => List.unmodifiable(_lossHistory);
 
   Future<void> initialize() async {
     if (_initialized) return;
     bridge.startListening();
     bridge.statisticsStream.listen((s) {
       _stats = s;
+      if (_running) {
+        final delaySample = (config.upload.delayMs + config.download.delayMs) /
+            2.0;
+        _latencyHistory.add(delaySample);
+        if (_latencyHistory.length > _maxHistory) {
+          _latencyHistory.removeAt(0);
+        }
+        final loss = (s.randomLossCount + s.continuousLossCount).toDouble();
+        _lossHistory.add(loss);
+        if (_lossHistory.length > _maxHistory) {
+          _lossHistory.removeAt(0);
+        }
+      }
       notifyListeners();
     });
     bridge.logStream.listen(_addLog);
@@ -105,11 +131,17 @@ class NetworkController extends ChangeNotifier {
     ));
 
     final shizuku = Map<String, dynamic>.from(data['shizuku'] as Map? ?? {});
+    final shizukuReady = shizuku['authorized'] == true;
     caps.add(BackendCapability(
       type: BackendType.shizuku,
       available: shizuku['installed'] == true,
-      authorized: shizuku['authorized'] == true,
-      message: (shizuku['message'] as String?) ?? '',
+      authorized: shizukuReady,
+      message: (shizuku['message'] as String?) ??
+          (shizukuReady
+              ? 'Shizuku 已授权'
+              : (shizuku['running'] == true
+                  ? '已运行，待授权'
+                  : '请安装并启动 Shizuku')),
       priority: 80,
     ));
 
@@ -117,7 +149,7 @@ class NetworkController extends ChangeNotifier {
       type: BackendType.adb,
       available: true,
       authorized: true,
-      message: '仅导出命令',
+      message: '仅导出命令到 PC 执行（应用无法直接 adb）',
       priority: 40,
     ));
 
@@ -160,7 +192,7 @@ class NetworkController extends ChangeNotifier {
   void selectTestMode() {
     _runSource = RunSource.test;
     _selectedProfileName = null;
-    _testConfig = _testConfig.copyWith(backend: _lockedBackend.id);
+    _testConfig = _testConfig.copyWith(name: '临时', backend: _lockedBackend.id);
     notifyListeners();
     _syncFloatPrefs();
   }
@@ -177,10 +209,38 @@ class NetworkController extends ChangeNotifier {
   }
 
   void updateTestConfig(NetworkConfig c) {
-    _testConfig = c.copyWith(name: '测试', backend: _lockedBackend.id);
+    _testConfig = c.copyWith(
+      name: _runSource == RunSource.profile
+          ? (_selectedProfileName ?? c.name)
+          : '临时',
+      backend: _lockedBackend.id,
+    );
+    // When adjusting a selected profile, also mirror into working config.
+    if (_runSource == RunSource.profile) {
+      _config = _testConfig;
+    }
     notifyListeners();
-    if (_running && _runSource == RunSource.test) {
-      bridge.updateConfig(_testConfig);
+    if (_running) {
+      bridge.updateConfig(_runSource == RunSource.test ? _testConfig : _config);
+    }
+  }
+
+  /// Load selected profile params into the adjust page editor state.
+  void prepareAdjustEditor() {
+    if (_runSource == RunSource.profile) {
+      _testConfig = _config;
+    }
+  }
+
+  void setFlashProfile(String? name) {
+    _flashProfileName = name;
+    notifyListeners();
+  }
+
+  void clearFlashProfile() {
+    if (_flashProfileName != null) {
+      _flashProfileName = null;
+      notifyListeners();
     }
   }
 
@@ -250,10 +310,23 @@ class NetworkController extends ChangeNotifier {
     bridge.setHideFromRecents(v);
   }
 
+  void setShowCharts(bool v) {
+    _showCharts = v;
+    notifyListeners();
+  }
+
+  void setRealNetworkAdaptive(bool v) {
+    _realNetworkAdaptive = v;
+    _addLog(v
+        ? '已开启「真实网络自适应」提示（参数仍手动/配置驱动，不自动改弱网强度）'
+        : '已关闭真实网络自适应提示');
+    notifyListeners();
+  }
+
   Future<bool> start() async {
     if (_running) return true;
     if (_runSource == RunSource.none) {
-      _addLog('请先选择「测试」或一个配置');
+      _addLog('请先选择「临时」或一个配置');
       return false;
     }
     final cfg = config.copyWith(backend: _lockedBackend.id);
@@ -266,7 +339,7 @@ class NetworkController extends ChangeNotifier {
         capabilities: _status.capabilities,
         recommendedReason: '',
       );
-      _addLog('已启动 · ${_runSource == RunSource.test ? "测试" : _selectedProfileName} · ${_lockedBackend.label}');
+      _addLog('已启动 · ${_runSource == RunSource.test ? "临时" : _selectedProfileName} · ${_lockedBackend.label}');
       if (_showControlFloat) bridge.showControlFloat(true);
       if (_showInfoFloat) bridge.showInfoFloat(true);
     } else {
@@ -343,6 +416,7 @@ class NetworkController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Export all profiles as one JSON document.
   Future<String> exportBackupJson() async {
     final list = await configService.loadProfiles();
     return const JsonEncoder.withIndent('  ').convert({
@@ -352,18 +426,47 @@ class NetworkController extends ChangeNotifier {
     });
   }
 
+  /// Export each profile as a separate JSON string (for multi-file / zip).
+  Future<Map<String, String>> exportProfilesAsFiles() async {
+    final list = await configService.loadProfiles();
+    final map = <String, String>{};
+    for (final p in list) {
+      final safe = p.name.replaceAll(RegExp(r'[^\w\u4e00-\u9fff\-]+'), '_');
+      map['$safe.json'] = const JsonEncoder.withIndent('  ').convert(p.toJson());
+    }
+    map['_index.json'] = const JsonEncoder.withIndent('  ').convert({
+      'version': 1,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'count': list.length,
+      'names': list.map((e) => e.name).toList(),
+    });
+    return map;
+  }
+
   Future<int> importBackupJson(String raw, {bool merge = true}) async {
     final decoded = jsonDecode(raw);
-    if (decoded is! Map) throw FormatException('无效备份');
-    final list = decoded['profiles'];
-    if (list is! List) throw FormatException('缺少 profiles');
     final imported = <NetworkConfig>[];
-    for (final item in list) {
-      if (item is Map) {
-        imported.add(NetworkConfig.fromJson(Map<String, dynamic>.from(item)));
+    if (decoded is Map) {
+      if (decoded['profiles'] is List) {
+        for (final item in decoded['profiles'] as List) {
+          if (item is Map) {
+            imported.add(
+                NetworkConfig.fromJson(Map<String, dynamic>.from(item)));
+          }
+        }
+      } else if (decoded.containsKey('name') && decoded.containsKey('upload')) {
+        // single profile json
+        imported.add(NetworkConfig.fromJson(Map<String, dynamic>.from(decoded)));
+      }
+    } else if (decoded is List) {
+      for (final item in decoded) {
+        if (item is Map) {
+          imported
+              .add(NetworkConfig.fromJson(Map<String, dynamic>.from(item)));
+        }
       }
     }
-    if (imported.isEmpty) throw FormatException('空备份');
+    if (imported.isEmpty) throw FormatException('无效备份：未找到配置');
     if (merge) {
       final existing = await configService.loadProfiles();
       final byName = {for (final p in existing) p.name: p};
@@ -376,15 +479,20 @@ class NetworkController extends ChangeNotifier {
     }
     _profiles = await configService.loadProfiles();
     notifyListeners();
+    _addLog('导入 ${imported.length} 个配置 (merge=$merge)');
     return imported.length;
   }
 
-  void _addLog(String msg) {
+  void _addLog(String msg, {String level = 'INFO'}) {
     final ts = DateTime.now().toIso8601String().substring(11, 19);
-    _logs.insert(0, '[$ts] $msg');
-    if (_logs.length > 300) _logs.removeLast();
+    _logs.insert(0, '[$ts][$level] $msg');
+    while (_logs.length > _maxLogs) {
+      _logs.removeLast();
+    }
     notifyListeners();
   }
+
+  String exportLogsText() => _logs.reversed.join('\n');
 
   @override
   void dispose() {

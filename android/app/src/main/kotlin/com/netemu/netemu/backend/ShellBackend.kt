@@ -6,6 +6,7 @@ import com.netemu.netemu.emulator.EmulatorConfig
 /**
  * Shared shell helpers for Root / Shizuku / ADB-style tc netem.
  * Improved qdisc layering: prefer HTB parent + netem child when both bandwidth and delay/loss needed.
+ * Always clears root qdisc on apply/stop to avoid rule stacking.
  */
 object ShellBackend {
     private const val TAG = "NetEmuShell"
@@ -73,7 +74,7 @@ object ShellBackend {
      * 3. Else: plain netem root
      *
      * Note: On Android, true download (ingress) shaping usually requires ifb module
-     * which is often unavailable without extra privileges. Document this limitation.
+     * which is often unavailable without extra privileges.
      */
     fun applyTc(iface: String?, useRoot: Boolean): Result {
         val dev = iface?.takeIf { it.isNotBlank() } ?: detectDefaultIface()
@@ -83,15 +84,15 @@ object ShellBackend {
         val loss = up.lossPercent
         val bw = up.bandwidthKbps
 
-        // Always clear first
+        // Always clear first to avoid stacking
         exec("tc qdisc del dev $dev root 2>/dev/null", useRoot)
+        exec("tc qdisc del dev $dev ingress 2>/dev/null", useRoot)
 
         if (delay <= 0 && jitter <= 0 && loss <= 0.0 && bw <= 0) {
             return Result(0, "cleared", "")
         }
 
         if (bw > 0) {
-            // Try HTB + netem leaf (more flexible)
             val rate = if (bw >= 1024) "${bw / 1024}mbit" else "${bw}kbit"
             val burst = if (bw >= 1024) "32kbit" else "16kbit"
 
@@ -100,7 +101,6 @@ object ShellBackend {
                 useRoot
             )
             if (r.exitCode != 0) {
-                // Fallback to TBF + netem
                 Log.w(TAG, "HTB failed, fallback TBF: ${r.stderr}")
                 r = exec(
                     "tc qdisc add dev $dev root handle 1: tbf rate $rate burst $burst latency 400ms",
@@ -117,14 +117,12 @@ object ShellBackend {
                 return r
             }
 
-            // HTB class
             r = exec(
                 "tc class add dev $dev parent 1: classid 1:10 htb rate $rate ceil $rate burst $burst",
                 useRoot
             )
             if (r.exitCode != 0) {
                 Log.w(TAG, "HTB class failed: ${r.stderr}")
-                // continue, try netem anyway
             }
 
             if (delay > 0 || jitter > 0 || loss > 0) {
@@ -137,7 +135,6 @@ object ShellBackend {
             return Result(0, "htb only", "")
         }
 
-        // No bandwidth limit: plain netem
         val netem = buildNetemArgs(delay, jitter, loss)
         val cmd = "tc qdisc add dev $dev root netem $netem"
         Log.i(TAG, "tc: $cmd")
@@ -148,7 +145,10 @@ object ShellBackend {
         val parts = mutableListOf<String>()
         if (delay > 0) {
             parts.add("delay ${delay}ms")
-            if (jitter > 0) parts.add("${jitter}ms")
+            if (jitter > 0) {
+                // distribution normal is supported by netem on many kernels
+                parts.add("${jitter}ms distribution normal")
+            }
         }
         if (loss > 0) parts.add("loss ${loss}%")
         return parts.joinToString(" ")
@@ -156,7 +156,39 @@ object ShellBackend {
 
     fun clearTc(iface: String?, useRoot: Boolean): Result {
         val dev = iface?.takeIf { it.isNotBlank() } ?: detectDefaultIface()
-        return exec("tc qdisc del dev $dev root 2>/dev/null", useRoot)
+        exec("tc qdisc del dev $dev root 2>/dev/null", useRoot)
+        return exec("tc qdisc del dev $dev ingress 2>/dev/null", useRoot)
+    }
+
+    /**
+     * Build a single shell script that applies current EmulatorConfig to [dev].
+     * Used by Root and Shizuku backends.
+     */
+    fun buildApplyScript(dev: String): String {
+        val up = EmulatorConfig.upload
+        val delay = up.delayMs
+        val jitter = up.jitterMs
+        val loss = up.lossPercent
+        val bw = up.bandwidthKbps
+        if (delay <= 0 && jitter <= 0 && loss <= 0.0 && bw <= 0) {
+            return "tc qdisc del dev $dev root 2>/dev/null || true"
+        }
+        val parts = mutableListOf<String>()
+        parts.add("tc qdisc del dev $dev root 2>/dev/null || true")
+        if (bw > 0) {
+            val rate = if (bw >= 1024) "${bw / 1024}mbit" else "${bw}kbit"
+            val burst = if (bw >= 1024) "32kbit" else "16kbit"
+            parts.add("tc qdisc add dev $dev root handle 1: htb default 10")
+            parts.add("tc class add dev $dev parent 1: classid 1:10 htb rate $rate ceil $rate burst $burst")
+            if (delay > 0 || jitter > 0 || loss > 0) {
+                val netem = buildNetemArgs(delay, jitter, loss)
+                parts.add("tc qdisc add dev $dev parent 1:10 handle 10: netem $netem")
+            }
+        } else {
+            val netem = buildNetemArgs(delay, jitter, loss)
+            parts.add("tc qdisc add dev $dev root netem $netem")
+        }
+        return parts.joinToString(" && ")
     }
 
     /** Generate adb shell commands for PC-assisted mode (no fake execution). */
@@ -164,6 +196,7 @@ object ShellBackend {
         val dev = iface?.takeIf { it.isNotBlank() } ?: "wlan0"
         val up = EmulatorConfig.upload
         val cmds = mutableListOf<String>()
+        cmds.add("# NetEmu ADB commands — run on PC while device is connected")
         cmds.add("adb shell tc qdisc del dev $dev root 2>/dev/null || true")
         if (up.bandwidthKbps > 0) {
             val rate = if (up.bandwidthKbps >= 1024)
@@ -180,6 +213,7 @@ object ShellBackend {
             val netem = buildNetemArgs(up.delayMs, up.jitterMs, up.lossPercent)
             cmds.add("adb shell tc qdisc add dev $dev root netem $netem")
         }
+        cmds.add("# To clear: adb shell tc qdisc del dev $dev root")
         return cmds
     }
 }

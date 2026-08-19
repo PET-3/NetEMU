@@ -255,7 +255,8 @@ class _MetricColumn extends StatelessWidget {
   }
 }
 
-/// 上传/下载流量占比动态条
+/// 上传/下载流量占比动态条。
+/// 无数据（初始）整条灰色；有流量后即使 1:1 也显示主色/第三色。
 class TrafficShareBar extends StatelessWidget {
   final int uploadBytes;
   final int downloadBytes;
@@ -270,10 +271,12 @@ class TrafficShareBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final total = uploadBytes + downloadBytes;
-    final upR = total == 0 ? 0.5 : uploadBytes / total;
-    final downR = total == 0 ? 0.5 : downloadBytes / total;
+    final hasData = total > 0;
+    final upR = hasData ? uploadBytes / total : 0.5;
+    final downR = hasData ? downloadBytes / total : 0.5;
     final upFlex = (upR * 1000).round().clamp(1, 999);
     final downFlex = (downR * 1000).round().clamp(1, 999);
+    final gray = cs.outlineVariant;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -282,42 +285,50 @@ class TrafficShareBar extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: SizedBox(
             height: 16,
-            child: Row(
-              children: [
-                Expanded(
-                  flex: upFlex,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    color: cs.primary.withValues(alpha: 0.85),
-                  ),
-                ),
-                Expanded(
-                  flex: downFlex,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    color: cs.tertiary.withValues(alpha: 0.85),
-                  ),
-                ),
-              ],
-            ),
+            child: hasData
+                ? Row(
+                    children: [
+                      Expanded(
+                        flex: upFlex,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          color: cs.primary.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      Expanded(
+                        flex: downFlex,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          color: cs.tertiary.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ],
+                  )
+                : Container(color: gray),
           ),
         ),
         const SizedBox(height: 6),
         Row(
           children: [
-            Icon(Icons.arrow_upward, size: 14, color: cs.primary),
+            Icon(Icons.arrow_upward,
+                size: 14, color: hasData ? cs.primary : gray),
             const SizedBox(width: 2),
             Text(
-              '上传 ${(upR * 100).toStringAsFixed(0)}%',
+              hasData
+                  ? '上传 ${(upR * 100).toStringAsFixed(0)}%'
+                  : '上传 —',
               style: Theme.of(context).textTheme.labelSmall,
             ),
             const Spacer(),
             Text(
-              '下载 ${(downR * 100).toStringAsFixed(0)}%',
+              hasData
+                  ? '下载 ${(downR * 100).toStringAsFixed(0)}%'
+                  : '下载 —',
               style: Theme.of(context).textTheme.labelSmall,
             ),
             const SizedBox(width: 2),
-            Icon(Icons.arrow_downward, size: 14, color: cs.tertiary),
+            Icon(Icons.arrow_downward,
+                size: 14, color: hasData ? cs.tertiary : gray),
           ],
         ),
       ],

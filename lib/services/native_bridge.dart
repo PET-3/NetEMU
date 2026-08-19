@@ -152,6 +152,16 @@ class NativeBridge {
     }
   }
 
+  Future<bool> requestShizukuPermission() async {
+    try {
+      final result =
+          await _method.invokeMethod<bool>('requestShizukuPermission');
+      return result ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   Future<bool> isRootAvailable() async {
     try {
       final result = await _method.invokeMethod<bool>('isRootAvailable');

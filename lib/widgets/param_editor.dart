@@ -13,6 +13,8 @@ class ParamEditor extends StatefulWidget {
   final bool isInt;
   final String? info;
   final ValueChanged<double>? onChanged;
+  /// Step for +/- buttons (default 1 for int, 0.1 for double).
+  final double? step;
 
   const ParamEditor({
     super.key,
@@ -26,6 +28,7 @@ class ParamEditor extends StatefulWidget {
     this.isInt = true,
     this.info,
     this.onChanged,
+    this.step,
   });
 
   @override
@@ -36,13 +39,17 @@ class _ParamEditorState extends State<ParamEditor> {
   late TextEditingController _ctrl;
   late FocusNode _focus;
 
+  double get _step =>
+      widget.step ?? (widget.isInt ? 1.0 : 0.1);
+
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: _fmt(widget.value));
-    _focus = FocusNode()..addListener(() {
-      if (!_focus.hasFocus) _commit();
-    });
+    _focus = FocusNode()
+      ..addListener(() {
+        if (!_focus.hasFocus) _commit();
+      });
   }
 
   @override
@@ -72,6 +79,13 @@ class _ParamEditorState extends State<ParamEditor> {
     final clamped = parsed.clamp(widget.min, widget.max);
     _ctrl.text = _fmt(clamped);
     widget.onChanged?.call(widget.isInt ? clamped.roundToDouble() : clamped);
+  }
+
+  void _nudge(double delta) {
+    final next = (widget.value + delta).clamp(widget.min, widget.max);
+    final out = widget.isInt ? next.roundToDouble() : next;
+    _ctrl.text = _fmt(out);
+    widget.onChanged?.call(out);
   }
 
   @override
@@ -127,17 +141,35 @@ class _ParamEditorState extends State<ParamEditor> {
             ),
           ],
         ),
-        Slider(
-          value: widget.value.clamp(widget.min, widget.max),
-          min: widget.min,
-          max: widget.max,
-          divisions: widget.divisions,
-          label: _fmt(widget.value),
-          onChanged: (v) {
-            final out = widget.isInt ? v.roundToDouble() : v;
-            _ctrl.text = _fmt(out);
-            widget.onChanged?.call(out);
-          },
+        Row(
+          children: [
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '-$_step',
+              onPressed: () => _nudge(-_step),
+              icon: const Icon(Icons.remove_circle_outline, size: 22),
+            ),
+            Expanded(
+              child: Slider(
+                value: widget.value.clamp(widget.min, widget.max),
+                min: widget.min,
+                max: widget.max,
+                divisions: widget.divisions,
+                label: _fmt(widget.value),
+                onChanged: (v) {
+                  final out = widget.isInt ? v.roundToDouble() : v;
+                  _ctrl.text = _fmt(out);
+                  widget.onChanged?.call(out);
+                },
+              ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '+$_step',
+              onPressed: () => _nudge(_step),
+              icon: const Icon(Icons.add_circle_outline, size: 22),
+            ),
+          ],
         ),
       ],
     );

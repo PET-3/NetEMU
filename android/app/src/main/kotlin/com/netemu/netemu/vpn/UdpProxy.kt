@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Full bidirectional UDP session mapping via protected DatagramSockets.
+ * Supports DNS, games, and general UDP with independent up/down emulation.
  */
 class UdpProxy(
     private val vpn: VpnService,
@@ -23,13 +24,20 @@ class UdpProxy(
 ) {
     companion object {
         private const val TAG = "NetEmuUdp"
-        private const val IDLE_MS = 60_000L
+        private const val IDLE_MS = 90_000L
     }
 
     data class Key(val src: InetAddress, val sport: Int, val dst: InetAddress, val dport: Int)
 
     private val sessions = ConcurrentHashMap<Key, Session>()
     private val pool: ExecutorService = Executors.newCachedThreadPool()
+    private val cleanupScheduler = Executors.newSingleThreadScheduledExecutor()
+
+    init {
+        cleanupScheduler.scheduleAtFixedRate({
+            cleanupIdle()
+        }, 30, 30, java.util.concurrent.TimeUnit.SECONDS)
+    }
 
     private class Session(
         val socket: DatagramSocket,
@@ -40,9 +48,11 @@ class UdpProxy(
         @Volatile var lastActive: Long = System.currentTimeMillis(),
     )
 
+    fun activeSessionCount(): Int = sessions.size
+
     fun handlePacket(packet: ByteArray) {
         if (!PacketUtil.isIpv4(packet)) return
-        if (!EmulatorConfig.shouldProcessProtocol(17)) return  // UDP=17
+        if (!EmulatorConfig.shouldProcessProtocol(17)) return
         val ihl = PacketUtil.ihl(packet)
         if (packet.size < ihl + 8) return
         val src = PacketUtil.srcAddr(packet)
@@ -51,9 +61,8 @@ class UdpProxy(
         val dport = PacketUtil.dstPort(packet, ihl)
         val payload = PacketUtil.udpPayload(packet, ihl)
 
-        // Upload emulation
         if (EmulatorStats.upload.shouldDrop()) return
-        if (!EmulatorStats.upload.consumeBandwidth(packet.size)) return
+        if (!EmulatorStats.upload.consumeBandwidth(packet.size, blockIfInsufficient = true)) return
         val delay = EmulatorStats.upload.computeDelayMs()
         EmulatorStats.upload.recordPass(packet.size)
 
@@ -70,7 +79,6 @@ class UdpProxy(
                 Log.w(TAG, "UDP send: ${e.message}")
                 closeSession(key)
             }
-            Unit
         }
         if (delay > 0) pool.execute(sendAction) else sendAction()
     }
@@ -105,9 +113,8 @@ class UdpProxy(
                 session.lastActive = System.currentTimeMillis()
                 val data = dp.data.copyOf(dp.length)
 
-                // Download emulation
                 if (EmulatorStats.download.shouldDrop()) continue
-                if (!EmulatorStats.download.consumeBandwidth(data.size + 28)) continue
+                if (!EmulatorStats.download.consumeBandwidth(data.size + 28, blockIfInsufficient = true)) continue
                 val delay = EmulatorStats.download.computeDelayMs()
                 EmulatorStats.download.recordPass(data.size)
 
@@ -127,7 +134,6 @@ class UdpProxy(
                     } catch (e: Exception) {
                         Log.w(TAG, "UDP inject: ${e.message}")
                     }
-                    Unit
                 }
                 if (delay > 0) pool.execute(inject) else inject()
             } catch (_: java.net.SocketTimeoutException) {
@@ -144,8 +150,19 @@ class UdpProxy(
         sessions.remove(key)?.socket?.close()
     }
 
+    private fun cleanupIdle() {
+        val now = System.currentTimeMillis()
+        sessions.entries.removeIf { (_, s) ->
+            if (now - s.lastActive > IDLE_MS) {
+                try { s.socket.close() } catch (_: Exception) {}
+                true
+            } else false
+        }
+    }
+
     fun shutdown() {
         sessions.keys.toList().forEach { closeSession(it) }
         pool.shutdownNow()
+        cleanupScheduler.shutdownNow()
     }
 }

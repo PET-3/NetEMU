@@ -2,6 +2,7 @@ package com.netemu.netemu
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
@@ -11,11 +12,14 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import com.netemu.netemu.backend.BackendManager
 import com.netemu.netemu.backend.ShellBackend
+import com.netemu.netemu.backend.ShizukuBackend
 import com.netemu.netemu.emulator.EmulatorConfig
 import com.netemu.netemu.emulator.EmulatorStats
 import com.netemu.netemu.float.FloatWindowService
 import com.netemu.netemu.vpn.NetEmuVpnService
+import rikka.shizuku.Shizuku
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -29,17 +33,40 @@ class MainActivity : FlutterActivity() {
     private var eventSink: EventChannel.EventSink? = null
     private val executor = Executors.newSingleThreadExecutor()
     private var pendingStartResult: MethodChannel.Result? = null
-    private var currentBackend = "vpn"
+    private var pendingStartArgs: Map<*, *>? = null
+    private lateinit var backendManager: BackendManager
     private var currentIface: String? = null
     private var simulationRunning = false
 
+    private val shizukuPermissionListener =
+        Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            val granted = grantResult == PackageManager.PERMISSION_GRANTED
+            Log.i(TAG, "Shizuku permission result: $granted")
+            sendLog(if (granted) "Shizuku authorized" else "Shizuku permission denied")
+            runOnUiThread {
+                eventSink?.success(
+                    mapOf(
+                        "type" to "shizuku_permission",
+                        "granted" to granted,
+                    )
+                )
+            }
+        }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        backendManager = BackendManager(this)
+
+        try {
+            Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+        } catch (e: Exception) {
+            Log.w(TAG, "Shizuku listener: ${e.message}")
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "detectBackends" -> result.success(detectBackends())
+                    "detectBackends" -> result.success(backendManager.detect())
                     "startSimulation" -> {
                         val args = call.arguments as? Map<*, *>
                         startSimulation(args, result)
@@ -48,26 +75,30 @@ class MainActivity : FlutterActivity() {
                         stopSimulation()
                         result.success(true)
                     }
-                    "getBackend" -> result.success(currentBackend)
+                    "getBackend" -> result.success(backendManager.activeBackendId)
                     "getInterfaces" -> result.success(ShellBackend.listInterfaces())
                     "updateConfig" -> {
                         val args = call.arguments as? Map<*, *>
                         applyConfig(args)
                         if (simulationRunning) {
-                            hotApply(args)
+                            backendManager.hotApply(currentIface)
                         }
                         result.success(true)
                     }
                     "getStatistics" -> result.success(
                         EmulatorStats.toMap(
-                            currentBackend,
+                            backendManager.activeBackendId,
                             currentIface ?: ShellBackend.detectDefaultIface(),
                             NetEmuVpnService.instance != null,
                         )
                     )
                     "executeCommand" -> {
                         val cmd = (call.arguments as? Map<*, *>)?.get("command") as? String ?: ""
-                        val r = ShellBackend.exec(cmd, useRoot = ShellBackend.isRootAvailable())
+                        val r = if (backendManager.shizuku.isAvailable()) {
+                            backendManager.shizuku.execViaShizuku(listOf(cmd))
+                        } else {
+                            ShellBackend.exec(cmd, useRoot = ShellBackend.isRootAvailable())
+                        }
                         result.success(
                             mapOf(
                                 "exitCode" to r.exitCode,
@@ -77,11 +108,24 @@ class MainActivity : FlutterActivity() {
                         )
                     }
                     "requestVpnPermission" -> requestVpnPermission(result)
-                    "getShizukuStatus" -> result.success(getShizukuStatus())
+                    "getShizukuStatus" -> result.success(getShizukuStatusMap())
+                    "requestShizukuPermission" -> {
+                        backendManager.shizuku.requestPermission(ShizukuBackend.REQUEST_CODE)
+                        result.success(true)
+                    }
                     "isRootAvailable" -> result.success(ShellBackend.isRootAvailable())
                     "exportAdbCommands" -> {
-                        result.success(ShellBackend.exportAdbCommands(currentIface))
+                        result.success(backendManager.getAdbCommands(currentIface))
                     }
+                    "switchBackend" -> {
+                        val args = call.arguments as? Map<*, *>
+                        val backend = args?.get("backend") as? String
+                        applyConfig(args)
+                        val (ok, id) = backendManager.switchBackend(backend, currentIface)
+                        simulationRunning = ok
+                        result.success(mapOf("ok" to ok, "backend" to id))
+                    }
+                    "healthCheck" -> result.success(backendManager.healthCheck())
                     "requestOverlayPermission" -> requestOverlayPermission(result)
                     "showControlFloat" -> {
                         val show = (call.arguments as? Map<*, *>)?.get("show") as? Boolean ?: false
@@ -89,13 +133,13 @@ class MainActivity : FlutterActivity() {
                     }
                     "setNotificationEnabled" -> {
                         val en = (call.arguments as? Map<*, *>)?.get("enabled") as? Boolean ?: true
-                        com.netemu.netemu.vpn.NetEmuVpnService.notificationEnabled = en
-                        com.netemu.netemu.vpn.NetEmuVpnService.instance?.refreshNotification()
+                        NetEmuVpnService.notificationEnabled = en
+                        NetEmuVpnService.instance?.refreshNotification()
                         result.success(true)
                     }
                     "setHideFromRecents" -> {
                         val hide = (call.arguments as? Map<*, *>)?.get("hide") as? Boolean ?: false
-                        if (android.os.Build.VERSION.SDK_INT >= 21) {
+                        if (Build.VERSION.SDK_INT >= 21) {
                             try {
                                 val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
                                 am.appTasks.forEach { it.setExcludeFromRecents(hide) }
@@ -124,107 +168,53 @@ class MainActivity : FlutterActivity() {
             })
     }
 
-    private fun detectBackends(): Map<String, Any> {
-        val root = ShellBackend.isRootAvailable()
-        val shizuku = getShizukuStatus()
+    private fun getShizukuStatusMap(): Map<String, Any> {
         return mapOf(
-            "root" to root,
-            "shizuku" to shizuku,
-            "adb" to false,
-            "vpn" to true,
+            "installed" to backendManager.shizuku.isInstalled(),
+            "running" to backendManager.shizuku.isRunning(),
+            "authorized" to backendManager.shizuku.isAuthorized(),
+            "message" to backendManager.shizuku.statusMessage(),
         )
-    }
-
-    private fun getShizukuStatus(): Map<String, Any> {
-        return try {
-            val pm = packageManager
-            val installed = try {
-                pm.getPackageInfo("moe.shizuku.privileged.api", 0)
-                true
-            } catch (_: Exception) {
-                try {
-                    pm.getPackageInfo("rikka.shizuku", 0)
-                    true
-                } catch (_: Exception) {
-                    false
-                }
-            }
-            mapOf(
-                "installed" to installed,
-                "running" to installed,
-                "authorized" to false,
-                "message" to if (installed)
-                    "Shizuku installed — open Shizuku app to authorize (full API needs Shizuku library)"
-                else
-                    "Shizuku not installed",
-            )
-        } catch (e: Exception) {
-            mapOf(
-                "installed" to false,
-                "running" to false,
-                "authorized" to false,
-                "message" to (e.message ?: ""),
-            )
-        }
     }
 
     private fun applyConfig(args: Map<*, *>?) {
         EmulatorConfig.applyFromMap(args)
         currentIface = args?.get("interfaceName") as? String
-        val backend = args?.get("backend") as? String ?: "auto"
-        if (backend != "auto") currentBackend = backend
-    }
-
-    private fun resolveBackend(requested: String?): String {
-        val req = requested ?: "auto"
-        if (req != "auto") return req
-        if (ShellBackend.isRootAvailable()) return "root"
-        val sh = getShizukuStatus()
-        if (sh["authorized"] == true) return "shizuku"
-        return "vpn"
     }
 
     private fun startSimulation(args: Map<*, *>?, result: MethodChannel.Result) {
         applyConfig(args)
-        val backend = resolveBackend(args?.get("backend") as? String)
-        currentBackend = backend
         EmulatorStats.reset()
+        val requested = args?.get("backend") as? String ?: "auto"
+        val resolved = backendManager.resolve(requested)
 
-        when (backend) {
-            "root" -> {
-                val r = ShellBackend.applyTc(currentIface, useRoot = true)
-                simulationRunning = r.exitCode == 0
-                sendLog("Root/tc started: exit=${r.exitCode} ${r.stderr}")
-                result.success(simulationRunning)
-                maybeShowFloats(args)
-            }
-            "shizuku" -> {
-                val r = ShellBackend.applyTc(currentIface, useRoot = false)
-                simulationRunning = r.exitCode == 0
-                sendLog(
-                    "Shizuku/shell tc: exit=${r.exitCode}. " +
-                        if (!simulationRunning) "Authorize Shizuku or use Root/VPN." else "ok"
-                )
-                result.success(simulationRunning)
-                if (simulationRunning) maybeShowFloats(args)
-            }
-            "adb" -> {
-                val cmds = ShellBackend.exportAdbCommands(currentIface)
-                simulationRunning = false
-                sendLog("ADB mode: run these on PC:\n" + cmds.joinToString("\n"))
-                result.success(false)
-            }
-            else -> {
+        when (resolved.id) {
+            "vpn" -> {
                 val intent = VpnService.prepare(this)
                 if (intent != null) {
                     pendingStartResult = result
+                    pendingStartArgs = args
                     startActivityForResult(intent, VPN_REQUEST_CODE)
                 } else {
-                    startVpnService()
-                    simulationRunning = true
-                    result.success(true)
-                    maybeShowFloats(args)
+                    val (ok, id) = backendManager.start("vpn", currentIface)
+                    simulationRunning = ok
+                    result.success(ok)
+                    if (ok) maybeShowFloats(args)
+                    sendLog("VPN started")
                 }
+            }
+            "adb" -> {
+                val cmds = backendManager.getAdbCommands(currentIface)
+                simulationRunning = false
+                sendLog("ADB mode — run on PC:\n" + cmds.joinToString("\n"))
+                result.success(false)
+            }
+            else -> {
+                val (ok, id) = backendManager.start(resolved.id, currentIface)
+                simulationRunning = ok
+                sendLog("$id started: $ok")
+                result.success(ok)
+                if (ok) maybeShowFloats(args)
             }
         }
     }
@@ -244,39 +234,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun hotApply(args: Map<*, *>?) {
-        when (currentBackend) {
-            "root" -> ShellBackend.applyTc(currentIface, useRoot = true)
-            "shizuku" -> ShellBackend.applyTc(currentIface, useRoot = false)
-            // VPN path reads EmulatorConfig live, no restart needed
-        }
-    }
-
-    private fun startVpnService() {
-        val intent = Intent(this, NetEmuVpnService::class.java).apply {
-            action = NetEmuVpnService.ACTION_START
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-        currentBackend = "vpn"
-        sendLog("VPN service started")
-    }
-
     private fun stopSimulation() {
-        when (currentBackend) {
-            "root" -> ShellBackend.clearTc(currentIface, useRoot = true)
-            "shizuku" -> ShellBackend.clearTc(currentIface, useRoot = false)
-            else -> {
-                val intent = Intent(this, NetEmuVpnService::class.java).apply {
-                    action = NetEmuVpnService.ACTION_STOP
-                }
-                startService(intent)
-            }
-        }
-        // Hide floats on stop
+        backendManager.stop()
         try {
             startService(Intent(this, FloatWindowService::class.java).apply {
                 action = FloatWindowService.ACTION_HIDE
@@ -332,8 +291,6 @@ class MainActivity : FlutterActivity() {
                 action = FloatWindowService.ACTION_SHOW_INFO
             })
         } else if (info == false && control == null) {
-            // only hide info: service currently hides all on ACTION_HIDE;
-            // for simplicity re-show control if needed by caller
             startService(Intent(this, FloatWindowService::class.java).apply {
                 action = FloatWindowService.ACTION_HIDE
             })
@@ -346,15 +303,18 @@ class MainActivity : FlutterActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == VPN_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK) {
-                startVpnService()
-                simulationRunning = true
-                pendingStartResult?.success(true)
+                val (ok, _) = backendManager.start("vpn", currentIface)
+                simulationRunning = ok
+                pendingStartResult?.success(ok)
+                if (ok) maybeShowFloats(pendingStartArgs)
+                sendLog("VPN service started after permission")
             } else {
                 simulationRunning = false
                 pendingStartResult?.success(false)
                 sendLog("VPN permission denied")
             }
             pendingStartResult = null
+            pendingStartArgs = null
         }
     }
 
@@ -362,12 +322,16 @@ class MainActivity : FlutterActivity() {
         executor.execute {
             while (eventSink != null) {
                 try {
+                    if (simulationRunning) {
+                        backendManager.healthCheck()
+                    }
                     val stats = EmulatorStats.toMap(
-                        currentBackend,
+                        backendManager.activeBackendId,
                         currentIface ?: ShellBackend.detectDefaultIface(),
                         NetEmuVpnService.instance != null,
                     ).toMutableMap()
                     stats["type"] = "stats"
+                    stats["running"] = simulationRunning
                     runOnUiThread { eventSink?.success(stats) }
                     Thread.sleep(1000)
                 } catch (_: Exception) {
@@ -380,7 +344,17 @@ class MainActivity : FlutterActivity() {
     private fun sendLog(msg: String) {
         Log.i(TAG, msg)
         runOnUiThread {
-            eventSink?.success(mapOf("type" to "log", "message" to msg))
+            eventSink?.success(mapOf("type" to "log", "message" to msg, "level" to "INFO"))
         }
+    }
+
+    override fun onDestroy() {
+        try {
+            Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+        } catch (_: Exception) {}
+        if (::backendManager.isInitialized) {
+            backendManager.destroy()
+        }
+        super.onDestroy()
     }
 }

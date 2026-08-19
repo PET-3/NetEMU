@@ -3,10 +3,6 @@ import '../models/network_config.dart';
 import 'param_editor.dart';
 import 'param_infos.dart';
 
-const kBandwidthOptions = <int>[
-  0, 64, 128, 256, 512, 1024, 2048, 5120, 10240, 20480, 51200,
-];
-
 class DirectionCard extends StatelessWidget {
   final String title;
   final DirectionConfig config;
@@ -42,7 +38,7 @@ class DirectionCard extends StatelessWidget {
               value: config.delayMs.toDouble(),
               min: 0,
               max: 3000,
-              divisions: 60,
+              divisions: 3000,
               unit: 'ms',
               readOnly: readOnly,
               info: ParamInfos.delay,
@@ -55,7 +51,7 @@ class DirectionCard extends StatelessWidget {
               value: config.jitterMs.toDouble(),
               min: 0,
               max: 1000,
-              divisions: 50,
+              divisions: 1000,
               unit: 'ms',
               readOnly: readOnly,
               info: ParamInfos.jitter,
@@ -64,47 +60,30 @@ class DirectionCard extends StatelessWidget {
                   : (v) =>
                       onChanged?.call(config.copyWith(jitterMs: v.round())),
             ),
-            if (readOnly)
-              ParamEditor(
-                label: '带宽',
-                value: config.bandwidthKbps.toDouble(),
-                min: 0,
-                max: 51200,
-                unit: config.bandwidthKbps <= 0 ? '' : 'Kbps',
-                readOnly: true,
-                info: ParamInfos.bandwidth,
-              )
-            else
-              Row(
-                children: [
-                  const Text('带宽'),
-                  const Spacer(),
-                  DropdownButton<int>(
-                    value: kBandwidthOptions.contains(config.bandwidthKbps)
-                        ? config.bandwidthKbps
-                        : 0,
-                    items: kBandwidthOptions.map((b) {
-                      final label = b == 0
-                          ? '不限'
-                          : (b >= 1024 ? '${b ~/ 1024} Mbps' : '$b Kbps');
-                      return DropdownMenuItem(value: b, child: Text(label));
-                    }).toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        onChanged?.call(config.copyWith(bandwidthKbps: v));
-                      }
-                    },
-                  ),
-                ],
-              ),
+            ParamEditor(
+              label: '带宽',
+              value: config.bandwidthKbps.toDouble(),
+              min: 0,
+              max: 51200,
+              divisions: 512,
+              unit: config.bandwidthKbps <= 0 ? '(不限)' : 'Kbps',
+              readOnly: readOnly,
+              info: ParamInfos.bandwidth,
+              step: 64,
+              onChanged: readOnly
+                  ? null
+                  : (v) => onChanged
+                      ?.call(config.copyWith(bandwidthKbps: v.round())),
+            ),
             ParamEditor(
               label: '随机丢包',
               value: config.lossPercent,
               min: 0,
               max: 100,
-              divisions: 100,
+              divisions: 1000,
               unit: '%',
               isInt: false,
+              step: 0.1,
               readOnly: readOnly,
               info: ParamInfos.loss,
               onChanged: readOnly
@@ -136,7 +115,7 @@ class DirectionCard extends StatelessWidget {
               value: config.continuousPass.toDouble(),
               min: 0,
               max: isTime ? 10000 : 100,
-              divisions: isTime ? 100 : 50,
+              divisions: isTime ? 1000 : 100,
               unit: isTime ? 'ms' : '',
               readOnly: readOnly,
               info: ParamInfos.contPass,
@@ -150,7 +129,7 @@ class DirectionCard extends StatelessWidget {
               value: config.continuousDrop.toDouble(),
               min: 0,
               max: isTime ? 10000 : 100,
-              divisions: isTime ? 100 : 50,
+              divisions: isTime ? 1000 : 100,
               unit: isTime ? 'ms' : '',
               readOnly: readOnly,
               info: ParamInfos.contDrop,

@@ -87,19 +87,19 @@ class ConfigService {
           download: DirectionConfig(delayMs: 20),
         ),
         const NetworkConfig(
-          name: '4G',
+          name: '2G',
           backend: 'vpn',
           upload: DirectionConfig(
-            delayMs: 50,
-            jitterMs: 10,
-            lossPercent: 1.0,
-            bandwidthKbps: 5120,
+            delayMs: 400,
+            jitterMs: 100,
+            lossPercent: 5.0,
+            bandwidthKbps: 64,
           ),
           download: DirectionConfig(
-            delayMs: 40,
-            jitterMs: 10,
-            lossPercent: 1.0,
-            bandwidthKbps: 20480,
+            delayMs: 350,
+            jitterMs: 80,
+            lossPercent: 5.0,
+            bandwidthKbps: 128,
           ),
         ),
         const NetworkConfig(
@@ -125,24 +125,110 @@ class ConfigService {
           ),
         ),
         const NetworkConfig(
+          name: '4G弱网',
+          backend: 'vpn',
+          upload: DirectionConfig(
+            delayMs: 80,
+            jitterMs: 30,
+            lossPercent: 2.0,
+            bandwidthKbps: 2048,
+          ),
+          download: DirectionConfig(
+            delayMs: 60,
+            jitterMs: 25,
+            lossPercent: 2.0,
+            bandwidthKbps: 8192,
+          ),
+        ),
+        const NetworkConfig(
+          name: '4G',
+          backend: 'vpn',
+          upload: DirectionConfig(
+            delayMs: 50,
+            jitterMs: 10,
+            lossPercent: 1.0,
+            bandwidthKbps: 5120,
+          ),
+          download: DirectionConfig(
+            delayMs: 40,
+            jitterMs: 10,
+            lossPercent: 1.0,
+            bandwidthKbps: 20480,
+          ),
+        ),
+        const NetworkConfig(
+          name: '5G高延迟',
+          backend: 'vpn',
+          upload: DirectionConfig(
+            delayMs: 120,
+            jitterMs: 40,
+            lossPercent: 0.5,
+            bandwidthKbps: 50000,
+          ),
+          download: DirectionConfig(
+            delayMs: 100,
+            jitterMs: 35,
+            lossPercent: 0.5,
+            bandwidthKbps: 100000,
+          ),
+        ),
+        const NetworkConfig(
+          name: '地铁',
+          backend: 'vpn',
+          upload: DirectionConfig(
+            delayMs: 200,
+            jitterMs: 80,
+            lossPercent: 8.0,
+            bandwidthKbps: 1024,
+            continuousMode: ContinuousMode.time,
+            continuousPass: 4000,
+            continuousDrop: 1500,
+          ),
+          download: DirectionConfig(
+            delayMs: 180,
+            jitterMs: 70,
+            lossPercent: 8.0,
+            bandwidthKbps: 3072,
+            continuousMode: ContinuousMode.time,
+            continuousPass: 4000,
+            continuousDrop: 1500,
+          ),
+        ),
+        const NetworkConfig(
+          name: '电梯',
+          backend: 'vpn',
+          upload: DirectionConfig(
+            continuousMode: ContinuousMode.time,
+            continuousPass: 2000,
+            continuousDrop: 3000,
+            lossPercent: 20.0,
+          ),
+          download: DirectionConfig(
+            continuousMode: ContinuousMode.time,
+            continuousPass: 2000,
+            continuousDrop: 3000,
+            lossPercent: 20.0,
+          ),
+        ),
+        const NetworkConfig(
+          name: '丢包严重网络',
+          backend: 'vpn',
+          upload: DirectionConfig(lossPercent: 25.0, delayMs: 100, jitterMs: 50),
+          download: DirectionConfig(lossPercent: 25.0, delayMs: 100, jitterMs: 50),
+        ),
+        const NetworkConfig(
           name: '高延迟',
           backend: 'vpn',
           upload: DirectionConfig(delayMs: 300, jitterMs: 50),
           download: DirectionConfig(delayMs: 300, jitterMs: 50),
         ),
         const NetworkConfig(
-          name: '高丢包',
-          backend: 'vpn',
-          upload: DirectionConfig(lossPercent: 15.0),
-          download: DirectionConfig(lossPercent: 15.0),
-        ),
-        const NetworkConfig(
           name: '间歇断网(时间)',
           backend: 'vpn',
           upload: DirectionConfig(
             continuousMode: ContinuousMode.time,
-            continuousPass: 3000, // 3s pass
-            continuousDrop: 1000, // 1s drop
+            continuousPass: 3000,
+            continuousDrop: 1000,
           ),
           download: DirectionConfig(
             continuousMode: ContinuousMode.time,
@@ -165,3 +251,4 @@ class ConfigService {
         ),
       ];
 }
+

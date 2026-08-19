@@ -11,6 +11,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.netemu.netemu.MainActivity
+import com.netemu.netemu.emulator.EmulatorConfig
 import com.netemu.netemu.emulator.EmulatorStats
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -18,7 +19,10 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * VpnService: TUN -> TcpProxy / UdpProxy with independent NetworkEmulator.
+ * VpnService: TUN <-> TcpProxy / UdpProxy / ICMP with independent NetworkEmulator.
+ * Full bidirectional path:
+ *   App -> TUN -> proxy -> remote
+ *   remote -> proxy -> TUN -> App
  * Zero extra delay when emulator delay=0.
  */
 class NetEmuVpnService : VpnService() {
@@ -44,6 +48,7 @@ class NetEmuVpnService : VpnService() {
     private var notifyTask: java.util.concurrent.ScheduledFuture<*>? = null
     private var tcpProxy: TcpProxy? = null
     private var udpProxy: UdpProxy? = null
+    private var tunOut: FileOutputStream? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -89,6 +94,7 @@ class NetEmuVpnService : VpnService() {
 
         val fd = vpnInterface!!
         val output = FileOutputStream(fd.fileDescriptor)
+        tunOut = output
         tcpProxy = TcpProxy(this, output, running)
         udpProxy = UdpProxy(this, output, running)
 
@@ -99,7 +105,7 @@ class NetEmuVpnService : VpnService() {
             refreshNotification()
         }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
         executor.execute { tunnelLoop(fd) }
-        Log.i(TAG, "VPN started (TCP+UDP proxy)")
+        Log.i(TAG, "VPN started (TCP+UDP+ICMP proxy)")
     }
 
     private fun stopVpn() {
@@ -108,6 +114,8 @@ class NetEmuVpnService : VpnService() {
         udpProxy?.shutdown()
         tcpProxy = null
         udpProxy = null
+        try { tunOut?.close() } catch (_: Exception) {}
+        tunOut = null
         try { vpnInterface?.close() } catch (_: Exception) {}
         vpnInterface = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -127,11 +135,42 @@ class NetEmuVpnService : VpnService() {
                 when (PacketUtil.protocol(packet)) {
                     PacketUtil.PROTO_UDP -> udpProxy?.handlePacket(packet)
                     PacketUtil.PROTO_TCP -> tcpProxy?.handlePacket(packet)
-                    PacketUtil.PROTO_ICMP -> { /* skip ICMP for now */ }
+                    PacketUtil.PROTO_ICMP -> handleIcmp(packet)
                 }
             } catch (e: Exception) {
                 if (running.get()) Log.e(TAG, "Tunnel error", e)
                 break
+            }
+        }
+    }
+
+    /** Basic ICMP Echo Request -> Echo Reply so ping works. */
+    private fun handleIcmp(packet: ByteArray) {
+        if (!EmulatorConfig.shouldProcessProtocol(1)) return
+        val ihl = PacketUtil.ihl(packet)
+        if (PacketUtil.icmpType(packet, ihl) != 8) return // only Echo Request
+
+        if (EmulatorStats.upload.shouldDrop()) return
+        if (!EmulatorStats.upload.consumeBandwidth(packet.size, blockIfInsufficient = true)) return
+        EmulatorStats.upload.recordPass(packet.size)
+
+        val delayUp = EmulatorStats.upload.computeDelayMs()
+        val reply = PacketUtil.buildIcmpEchoReply(packet) ?: return
+
+        executor.execute {
+            try {
+                if (delayUp > 0) Thread.sleep(delayUp)
+                if (EmulatorStats.download.shouldDrop()) return@execute
+                if (!EmulatorStats.download.consumeBandwidth(reply.size, blockIfInsufficient = true)) return@execute
+                val delayDown = EmulatorStats.download.computeDelayMs()
+                EmulatorStats.download.recordPass(reply.size)
+                if (delayDown > 0) Thread.sleep(delayDown)
+                val out = tunOut ?: return@execute
+                synchronized(out) {
+                    out.write(reply)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "ICMP reply: ${e.message}")
             }
         }
     }
@@ -155,12 +194,16 @@ class NetEmuVpnService : VpnService() {
         )
         val up = EmulatorStats.upload
         val down = EmulatorStats.download
+        val tcpN = tcpProxy?.activeSessionCount() ?: 0
+        val udpN = udpProxy?.activeSessionCount() ?: 0
+        EmulatorStats.tcpSessions = tcpN
+        EmulatorStats.udpSessions = udpN
         fun spd(bps: Double): String = when {
             bps >= 1_000_000 -> String.format("%.1fMB/s", bps / 1_000_000)
             bps >= 1_000 -> String.format("%.0fKB/s", bps / 1_000)
             else -> String.format("%.0fB/s", bps)
         }
-        val body = "↑${spd(up.currentSpeedBps)} ↓${spd(down.currentSpeedBps)} · 丢包${up.randomLoss.get() + down.randomLoss.get()} · VPN"
+        val body = "↑${spd(up.currentSpeedBps)} ↓${spd(down.currentSpeedBps)} · 丢包${up.randomLoss.get() + down.randomLoss.get()} · TCP:$tcpN UDP:$udpN"
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("NetEmu 运行中")
             .setContentText(body)
@@ -183,9 +226,8 @@ class NetEmuVpnService : VpnService() {
             .build()
     }
 
-    /** 供外部定期刷新通知内容 */
     fun refreshNotification() {
-        if (!running.get()) return
+        if (!running.get() || !notificationEnabled) return
         try {
             val nm = getSystemService(NotificationManager::class.java)
             nm.notify(NOTIFICATION_ID, buildNotification())
@@ -200,6 +242,7 @@ class NetEmuVpnService : VpnService() {
         instance = null
         tcpProxy?.shutdown()
         udpProxy?.shutdown()
+        try { tunOut?.close() } catch (_: Exception) {}
         try { vpnInterface?.close() } catch (_: Exception) {}
         executor.shutdownNow()
         super.onDestroy()

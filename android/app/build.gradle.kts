@@ -22,8 +22,8 @@ android {
         applicationId = "com.netemu.netemu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         // arm64-v8a only — do NOT combine with flutter --split-per-abi filters conflict
         ndk {
             abiFilters.clear()
@@ -56,4 +56,7 @@ flutter {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    // Shizuku API for privileged shell without full root
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }

@@ -4,9 +4,16 @@ object EmulatorStats {
     val upload = NetworkEmulator(EmulatorConfig.upload)
     val download = NetworkEmulator(EmulatorConfig.download)
 
+    @Volatile
+    var tcpSessions: Int = 0
+    @Volatile
+    var udpSessions: Int = 0
+
     fun reset() {
         upload.resetStats()
         download.resetStats()
+        tcpSessions = 0
+        udpSessions = 0
     }
 
     fun toMap(backend: String, iface: String, vpnActive: Boolean): Map<String, Any> {
@@ -23,6 +30,8 @@ object EmulatorStats {
             "interfaceName" to iface,
             "vpnActive" to vpnActive,
             "protocolFilter" to EmulatorConfig.protocolFilter,
+            "tcpSessions" to tcpSessions,
+            "udpSessions" to udpSessions,
         )
     }
 }
