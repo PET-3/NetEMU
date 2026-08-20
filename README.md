@@ -122,3 +122,11 @@ Flutter UI ──MethodChannel──▶ MainActivity / BackendManager
 - 微信：yyx307022
 
 许可以仓库内 `LICENSE` 为准。
+
+<p align="center">
+  <b>你是第</b>
+  <br>
+  <img src="https://count.getloli.com/get/@PET-3?theme=rule12">
+  <br>
+  <b>位访问者</b>
+</p>
